@@ -15,18 +15,33 @@ from .transforms import (
 
 
 
-def create_transform_step(num_channels, cond_channels, level_hidden_channels, actnorm=True):
+def create_transform_step(num_channels, cond_channels, level_hidden_channels, network):
     return CompositeTransform([
-        ActNorm2d(num_channels), # 1. Actnorm
-        InvertibleConv1x1(num_channels, LU_decomposed=True), # 2. permute
-        AffineCouplingTransform(num_channels, cond_channels, level_hidden_channels) # 3. coupling
+        # 1. actnorm
+        ActNorm2d(num_channels), 
+        # 2. permute
+        InvertibleConv1x1(num_channels, LU_decomposed=True), 
+        # 3. coupling
+        AffineCouplingTransform(
+            num_channels,
+            cond_channels,
+            level_hidden_channels,
+            network=network
+        ) 
     ])
 
-def create_transform(num_channels, cond_channels, seq_len, levels=3, hidden_channels=256):
+def create_transform(num_channels, cond_channels, seq_len, levels, hidden_channels, network):
     hidden_channels = [hidden_channels] * levels
     all_transforms = []
     for level, level_hidden_channels in zip(range(levels), hidden_channels):
-        all_transforms.append(create_transform_step(num_channels, cond_channels, level_hidden_channels))
+        all_transforms.append(
+            create_transform_step(
+                num_channels,
+                cond_channels,
+                level_hidden_channels,
+                network
+            )
+        )
     all_transforms.append(ReshapeTransform(
         input_shape = (num_channels, seq_len),
         output_shape = (num_channels * seq_len,)
@@ -34,7 +49,7 @@ def create_transform(num_channels, cond_channels, seq_len, levels=3, hidden_chan
     return CompositeTransform(all_transforms)
 
 
-def create_flow(num_channels, cond_channels, seq_len, levels=3, hidden_channels=20, device=None):
+def create_flow(num_channels, cond_channels, seq_len, levels, hidden_channels, network, device=None):
     distribution = distributions.StandardNormal((num_channels * seq_len,)).double().to(device)
     transform = create_transform(
         num_channels=num_channels,
@@ -42,13 +57,14 @@ def create_flow(num_channels, cond_channels, seq_len, levels=3, hidden_channels=
         seq_len=seq_len,
         levels=levels,
         hidden_channels=hidden_channels,
+        network=network
     )
     flow = Flow(transform, distribution).double()
     return flow
 
 
 class Moglow:
-    def __init__(self, num_channels, cond_channels, seq_len, levels=3, hidden_channels=10, device=None):
+    def __init__(self, num_channels, cond_channels, seq_len, levels=3, hidden_channels=128, network='LSTM', device=None):
         if not device:
             self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.flow = create_flow(
@@ -57,6 +73,7 @@ class Moglow:
             seq_len=seq_len,
             levels=levels,
             hidden_channels=hidden_channels,
+            network=network,
             device=self.device
         )
 
