@@ -97,4 +97,7 @@ class Moglow:
         
     def sample(self, num_samples=100, conds=None):
         return self.flow.sample_and_log_prob(num_samples, conds)
+    
+    def log_prob(self, inputs, conds):
+        return self.flow.log_prob(inputs=inputs, conds=conds)
 
