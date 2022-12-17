@@ -76,7 +76,7 @@ class InvertibleConv1x1(transforms.Transform):
                 w = torch.matmul(u, torch.matmul(l, self.p.inverse()))
             return w.view(w_shape[0], w_shape[1], 1), dlogdet
 
-    def forward(self, inputs, context=None):
+    def forward(self, inputs, conds=None, context=None):
         """
         log-det = log|abs(|W|)| * timesteps
         """
@@ -86,7 +86,7 @@ class InvertibleConv1x1(transforms.Transform):
         z = F.conv1d(inputs, weight)
         return z, dlogdet
 
-    def inverse(self, inputs, context=None):
+    def inverse(self, inputs, conds=None, context=None):
         nan_throw(inputs, "InConv inpust")
         weight, dlogdet = self.get_weight(inputs, reverse=True)
         z = F.conv1d(inputs, weight)

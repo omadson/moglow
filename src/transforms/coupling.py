@@ -18,15 +18,16 @@ def nan_throw(tensor, name="tensor"):
             #raise ValueError(name + ' contains nans of infs')
 
 class AffineCouplingTransform(transforms.Transform):
-    def __init__(self, in_channels, hidden_channels,  network=LSTM):
+    def __init__(self, in_channels, cond_channels, hidden_channels,  network=LSTM):
         super().__init__()
-        self.f = network(in_channels // 2, hidden_channels, 2*(in_channels-in_channels // 2))
+        self.f = network((in_channels // 2)+cond_channels, hidden_channels, 2*(in_channels-in_channels // 2))
         # self.f = network(in_channels, hidden_channels, 2*(in_channels))
 
-    def forward(self, inputs, context=None):
+    def forward(self, inputs, conds=None, context=None):
+
         z1, z2 = thops.split_feature(inputs, "split")
-        # .permute(0, 2, 1, 3).contiguous()
-        h = self.f(z1.permute(0, 2, 1).contiguous()).permute(0, 2, 1).contiguous()
+        z1_cond = torch.cat((z1, conds), dim=1)
+        h = self.f(z1_cond.permute(0, 2, 1).contiguous()).permute(0, 2, 1).contiguous()
         shift, scale = thops.split_feature(h, "cross")
         scale = torch.sigmoid(scale + 2.)+1e-6
         z2 = z2 + shift
@@ -36,14 +37,15 @@ class AffineCouplingTransform(transforms.Transform):
         z = thops.cat_feature(z1, z2)
         return z, logdet
 
-    def inverse(self, inputs, context=None):
+    def inverse(self, inputs, conds=None, context=None):
         z1, z2 = thops.split_feature(inputs, "split")
-        h = self.f(z1.permute(0, 2, 1)).permute(0, 2, 1)
+        z1_cond = torch.cat((z1, conds), dim=1)
+        h = self.f(z1_cond.permute(0, 2, 1)).permute(0, 2, 1)
         shift, scale = thops.split_feature(h, "cross")
         nan_throw(shift, "shift")
         nan_throw(scale, "scale")
         nan_throw(z2, "z2 unscaled")
-        scale = torch.sigmoid(scale + 2.)+1e-6
+        scale = torch.sigmoid(scale + 2.) + 1e-6
         z2 = z2 / scale
         z2 = z2 - shift
         z = thops.cat_feature(z1, z2)

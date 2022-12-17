@@ -58,7 +58,7 @@ class _ActNorm(transforms.Transform):
             dlogdet = -thops.sum(logs) * thops.timesteps(input)
         return input, dlogdet
 
-    def forward(self, input, context=None):
+    def forward(self, input, conds=None, context=None):
         if not self.inited:
             self.initialize_parameters(input)
         self._check_input_dim(input)
@@ -68,7 +68,7 @@ class _ActNorm(transforms.Transform):
         input, logdet = self._scale(input, reverse=False)
         return input, logdet
     
-    def inverse(self, input, context=None):
+    def inverse(self, input, conds=None, context=None):
         # scale and center
         input, logdet = self._scale(input, reverse=True)
         input = self._center(input, reverse=True)
