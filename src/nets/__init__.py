@@ -1,2 +1,2 @@
-from .lstm import LSTM
-from .lstm import LinearZeroInit
+from .rnn import LSTM
+from .rnn import LinearZeroInit

@@ -4,7 +4,6 @@ from torch.utils.data import DataLoader
 from nflows import transforms, flows, distributions
 
 from .flow import Flow
-
 from .transforms import (
     CompositeTransform,
     ActNorm2d,
@@ -14,94 +13,41 @@ from .transforms import (
 )
 
 
+class Moglow(Flow):
+    def __init__(
+        self,
+        features,
+        conditional_features,
+        sequence_length,
+        num_layers=3,
+        coupling_flow='affine',
+        coupling_network='LSTM',
+        num_blocks_per_layer=128,
+    ):
 
-def create_transform_step(num_channels, cond_channels, level_hidden_channels, network, flow_coupling):
-    return CompositeTransform([
-        # 1. actnorm
-        ActNorm2d(num_channels), 
-        # 2. permute
-        InvertibleConv1x1(num_channels, LU_decomposed=True), 
-        # 3. coupling
-        AffineCouplingTransform(
-            in_channels=num_channels,
-            cond_channels=cond_channels,
-            hidden_channels=level_hidden_channels,
-            network=network,
-            flow_coupling=flow_coupling
-        ) 
-    ])
-
-def create_transform(num_channels, cond_channels, seq_len, levels, hidden_channels, network, flow_coupling):
-    hidden_channels = [hidden_channels] * levels
-    all_transforms = []
-    for level, level_hidden_channels in zip(range(levels), hidden_channels):
-        all_transforms.append(
-            create_transform_step(
-                num_channels,
-                cond_channels,
-                level_hidden_channels,
-                network,
-                flow_coupling
-            )
-        )
-    all_transforms.append(ReshapeTransform(
-        input_shape = (num_channels, seq_len),
-        output_shape = (num_channels * seq_len,)
-    ))
-    return CompositeTransform(all_transforms)
-
-
-def create_flow(num_channels, cond_channels, seq_len, levels, hidden_channels, network, flow_coupling, device=None):
-    distribution = distributions.StandardNormal((num_channels * seq_len,)).double().to(device)
-    transform = create_transform(
-        num_channels=num_channels,
-        cond_channels=cond_channels,
-        seq_len=seq_len,
-        levels=levels,
-        hidden_channels=hidden_channels,
-        network=network,
-        flow_coupling=flow_coupling
-    )
-    flow = Flow(transform, distribution).double()
-    return flow
-
-
-class Moglow:
-    def __init__(self, num_channels, cond_channels, seq_len, levels=3, hidden_channels=128, network='LSTM', flow_coupling='affine', device=None):
-        if not device:
-            self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.flow = create_flow(
-            num_channels=num_channels,
-            cond_channels=cond_channels,
-            seq_len=seq_len,
-            levels=levels,
-            hidden_channels=hidden_channels,
-            network=network,
-            flow_coupling=flow_coupling,
-            device=self.device
-        )
-
-    def train(self, train_set, batch_size=128, max_epochs=50, log_interval=10, learning_rate=1e-4, weight_decay=1e-2):
-        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
-        optimizer = optim.Adam(self.flow.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        loss_list = []
-        for epoch in range(1, max_epochs+1):
-            loss_all = torch.tensor(0, dtype=torch.float, device=self.device)
-            for data_batch in train_loader:
-                self.flow.train()
-                optimizer.zero_grad()
-                loss = -self.flow.log_prob(inputs=data_batch['x'], conds=data_batch['cond']).mean()
-                loss.backward(retain_graph=True)
-                optimizer.step()
-                loss_all += loss.sum()
-            loss_list.append(loss_all.item()/len(train_loader.dataset))
-            if epoch % log_interval == 0:
-                print(f" - Epoch {epoch:3d}: {loss.item():.3f}")
-        return loss_list
+        layers = []
+        for _ in range(num_layers):
+            layers.append(CompositeTransform([
+                # 1. actnorm
+                ActNorm2d(features), 
+                # 2. permute
+                InvertibleConv1x1(features, LU_decomposed=True), 
+                # 3. coupling
+                AffineCouplingTransform(
+                    in_channels=features,
+                    cond_channels=conditional_features,
+                    hidden_channels=num_blocks_per_layer,
+                    network=coupling_network,
+                    flow_coupling=coupling_flow
+                ) 
+            ]))
         
-    def sample(self, num_samples=100, conds=None):
-        return self.flow.sample_and_log_prob(num_samples, conds)
-    
-    def log_prob(self, inputs, conds):
-        return self.flow.log_prob(inputs=inputs, conds=conds)
+        layers.append(ReshapeTransform(
+            input_shape = (features, sequence_length),
+            output_shape = (features * sequence_length,)
+        ))
 
+        super().__init__(
+            transform=CompositeTransform(layers),
+            distribution=distributions.StandardNormal((features * sequence_length,)),
+        )

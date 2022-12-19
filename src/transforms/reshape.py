@@ -14,10 +14,10 @@ class ReshapeTransform(transforms.Transform):
         if tuple(inputs.shape[1:]) != self.input_shape:
             raise RuntimeError('Unexpected inputs shape ({}, but expecting {})'
                                .format(tuple(inputs.shape[1:]), self.input_shape))
-        return inputs.reshape(-1, *self.output_shape).double(), torch.zeros(inputs.shape[0], device=inputs.device).double()
+        return inputs.reshape(-1, *self.output_shape), torch.zeros(inputs.shape[0], device=inputs.device)
 
     def inverse(self, inputs, conds=None, context=None):
         if tuple(inputs.shape[1:]) != self.output_shape:
             raise RuntimeError('Unexpected inputs shape ({}, but expecting {})'
                                .format(tuple(inputs.shape[1:]), self.output_shape))
-        return inputs.reshape(-1, *self.input_shape).double(), torch.zeros(inputs.shape[0], device=inputs.device).double()
+        return inputs.reshape(-1, *self.input_shape), torch.zeros(inputs.shape[0], device=inputs.device)

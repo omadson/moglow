@@ -26,14 +26,14 @@ class AffineCouplingTransform(transforms.Transform):
         if self.flow_coupling == 'affine':
             out_channels = 2*out_channels
         self.f = LSTM((in_channels // 2)+cond_channels, hidden_channels, out_channels)
-        if network.lower == 'ff':
+        if network.lower() == 'ff':
             self.f = nn.Sequential(
                 nn.Linear((in_channels // 2)+cond_channels, hidden_channels),
                 nn.ReLU(inplace=False),
                 nn.Linear(hidden_channels, hidden_channels),
                 nn.ReLU(inplace=False),
                 LinearZeroInit(hidden_channels, out_channels)
-            )
+            ).double()
 
     def forward(self, inputs, conds=None, context=None):
         z1, z2 = thops.split_feature(inputs, "split")
@@ -52,7 +52,7 @@ class AffineCouplingTransform(transforms.Transform):
         return z, logdet
 
     def inverse(self, inputs, conds=None, context=None):
-        z1, z2 = thops.split_feature(inputs, "split")
+        z1, z2 = thops.split_feature(inputs.double(), "split")
         z1_cond = torch.cat((z1, conds), dim=1)
         if self.flow_coupling == "additive":
             z2 = z2 - self.f(z1_cond.permute(0, 2, 1)).permute(0, 2, 1)

@@ -39,13 +39,13 @@ class InvertibleConv1x1(transforms.Transform):
 
             #self.p = torch.Tensor(np_p.astype(np.float32))
             #self.sign_s = torch.Tensor(np_sign_s.astype(np.float32))
-            self.register_buffer('p', torch.Tensor(np_p).double())
-            self.register_buffer('sign_s', torch.Tensor(np_sign_s).double())
-            self.l = nn.Parameter(torch.Tensor(np_l).double())
-            self.log_s = nn.Parameter(torch.Tensor(np_log_s).double())
-            self.u = nn.Parameter(torch.Tensor(np_u).double())
-            self.l_mask = torch.Tensor(l_mask).double()
-            self.eye = torch.Tensor(eye).double()
+            self.register_buffer('p', torch.Tensor(np_p))
+            self.register_buffer('sign_s', torch.Tensor(np_sign_s))
+            self.l = nn.Parameter(torch.Tensor(np_l))
+            self.log_s = nn.Parameter(torch.Tensor(np_log_s))
+            self.u = nn.Parameter(torch.Tensor(np_u))
+            self.l_mask = torch.Tensor(l_mask)
+            self.eye = torch.Tensor(eye)
         self.w_shape = w_shape
         self.LU = LU_decomposed
 
@@ -57,7 +57,7 @@ class InvertibleConv1x1(transforms.Transform):
             if not reverse:
                 weight = self.weight.view(w_shape[0], w_shape[1], 1)
             else:
-                weight = torch.inverse(self.weight.double()).double()\
+                weight = torch.inverse(self.weight)\
                               .view(w_shape[0], w_shape[1], 1)
             return weight, dlogdet
         else:
@@ -71,8 +71,8 @@ class InvertibleConv1x1(transforms.Transform):
             if not reverse:
                 w = torch.matmul(self.p, torch.matmul(l, u))
             else:
-                l = torch.inverse(l.double()).double()
-                u = torch.inverse(u.double()).double()
+                l = torch.inverse(l)
+                u = torch.inverse(u)
                 w = torch.matmul(u, torch.matmul(l, self.p.inverse()))
             return w.view(w_shape[0], w_shape[1], 1), dlogdet
 
@@ -83,12 +83,12 @@ class InvertibleConv1x1(transforms.Transform):
         weight, dlogdet = self.get_weight(inputs, reverse=False)
         nan_throw(weight, "weight")
         nan_throw(dlogdet, "dlogdet")
-        z = F.conv1d(inputs, weight)
+        z = F.conv1d(inputs, weight.double())
         return z, dlogdet
 
     def inverse(self, inputs, conds=None, context=None):
         nan_throw(inputs, "InConv inpust")
         weight, dlogdet = self.get_weight(inputs, reverse=True)
-        z = F.conv1d(inputs, weight)
+        z = F.conv1d(inputs, weight.double())
         nan_throw(z, "InConv z")
         return z, dlogdet
