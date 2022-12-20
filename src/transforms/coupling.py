@@ -19,13 +19,27 @@ def nan_throw(tensor, name="tensor"):
             #raise ValueError(name + ' contains nans of infs')
 
 class AffineCouplingTransform(transforms.Transform):
-    def __init__(self, in_channels, cond_channels, hidden_channels, network='lstm', flow_coupling='additive'):
+    def __init__(
+        self,
+        in_channels,
+        cond_channels,
+        hidden_channels,
+        network='lstm',
+        num_blocks_per_layer=2,
+        flow_coupling='additive'
+    ):
         super().__init__()
+        self.network = network
         self.flow_coupling = flow_coupling
         out_channels = (in_channels-in_channels // 2)
         if self.flow_coupling == 'affine':
             out_channels = 2*out_channels
-        self.f = LSTM((in_channels // 2)+cond_channels, hidden_channels, out_channels)
+        self.f = LSTM(
+            (in_channels // 2)+cond_channels,
+            hidden_channels,
+            out_channels,
+            num_blocks_per_layer
+        )
         if network.lower() == 'ff':
             self.f = nn.Sequential(
                 nn.Linear((in_channels // 2)+cond_channels, hidden_channels),
