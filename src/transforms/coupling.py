@@ -66,7 +66,7 @@ class AffineCouplingTransform(transforms.Transform):
         return z, logdet
 
     def inverse(self, inputs, conds=None, context=None):
-        z1, z2 = thops.split_feature(inputs.double(), "split")
+        z1, z2 = thops.split_feature(inputs, "split")
         z1_cond = torch.cat((z1, conds), dim=1)
         if self.flow_coupling == "additive":
             z2 = z2 - self.f(z1_cond.permute(0, 2, 1)).permute(0, 2, 1)
