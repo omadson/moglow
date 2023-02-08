@@ -59,17 +59,11 @@ class Moglow(Flow):
             distribution=distributions.StandardNormal((features * sequence_length,)),
         )
         
-    def init_lstm_hidden(self, inputs):
-        for step_transforms in self._transform.children():
-            for step_transform in step_transforms:
-                for transform in step_transform.children():
-                    for inner_transform in transform:
-                        if isinstance(inner_transform, AffineCouplingTransform):
-                            if inner_transform.network.lower() == 'lstm':
-                                inner_transform.f.init_hidden(inputs['x'].shape[0])
-                                z1, z2 = thops.split_feature(inputs['x'], "split")
-                                z1_cond = torch.cat((z1, inputs['cond']), dim=1)  
-                                inner_transform.f(z1_cond.permute(0, 2, 1))
+    def init_lstm_hidden(self, batch_size):
+        layer_transforms = [layer._transforms[-1] for layer in next(self._transform.children())[:-1]]
+        for layer_transform in layer_transforms:
+            if layer_transform.network.lower() == 'lstm':
+                layer_transform.f.init_hidden(batch_size)
     
     def repackage_lstm_hidden(self):
         for step_transforms in self._transform.children():

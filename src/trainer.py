@@ -28,7 +28,7 @@ class Trainer:
             model.train()
             for i, data_batch in enumerate(train_dataloader):
                 if epoch == 1:
-                    model.init_lstm_hidden(data_batch)
+                    model.init_lstm_hidden(data_batch['x'].shape[0])
                 model.repackage_lstm_hidden()
                 self.optimizer.zero_grad()
                 loss = self.loss_func(model, data_batch)
