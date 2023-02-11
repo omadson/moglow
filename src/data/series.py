@@ -77,11 +77,11 @@ class SeriesDataset(Dataset):
         #create indices for the sequences we want
         rng = np.arange(0, n_timesteps)
         for ii in range(0,seqlen):  
-            inds[:, ii] = np.transpose(rng[ii:(n_timesteps-(seqlen-ii-1))])  
+            inds[:, ii] = rng[ii:(n_timesteps-(seqlen-ii-1))]
 
         #slice each sample into L sequences and store as new samples 
-        cc=data[:,inds,:].copy()
-        
+        cc = data[:,inds,:].copy()
+
         #print ("cc: " + str(cc.shape))
 
         #reshape all timesteps and features into one dimention per sample

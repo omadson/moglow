@@ -10,7 +10,6 @@ import nflows.utils.typechecks as check
 
 class NoMeanException(Exception):
     """Exception to be thrown when a mean function doesn't exist."""
-
     pass
 
 
@@ -20,7 +19,7 @@ class Distribution(nn.Module):
     def forward(self, *args):
         raise RuntimeError("Forward method cannot be called for a Distribution object.")
 
-    def log_prob(self, inputs, conds, context=None):
+    def log_prob(self, inputs, conds, context=None, point=False):
         """Calculate log probability under the distribution.
 
         Args:
@@ -38,9 +37,9 @@ class Distribution(nn.Module):
                 raise ValueError(
                     "Number of input items must be equal to number of context items."
                 )
-        return self._log_prob(inputs, conds, context)
+        return self._log_prob(inputs, conds, context, point)
 
-    def _log_prob(self, inputs, conds, context):
+    def _log_prob(self, inputs, conds, context, point):
         raise NotImplementedError()
 
     def sample(self, num_samples, conds, context=None, batch_size=None):
@@ -149,15 +148,20 @@ class Flow(Distribution):
         else:
             self._embedding_net = torch.nn.Identity()
 
-    def _log_prob(self, inputs, conds, context):
+    def _log_prob(self, inputs, conds, context, point):
         embedded_context = self._embedding_net(context)
-        noise, logabsdet = self._transform(inputs, conds, context=embedded_context)
-        log_prob = self._distribution.log_prob(noise, context=embedded_context)
+        if point:
+            noise, _, logabsdet = self._transform(inputs, conds, context=embedded_context, point=point)
+            _, log_prob = self._distribution.log_prob(noise, context=embedded_context, conds=conds, point=point)
+            # print(log_prob)
+        else:
+            noise, logabsdet = self._transform(inputs, conds, context=embedded_context)
+            log_prob = self._distribution.log_prob(noise, context=embedded_context, conds=conds)
         return log_prob + logabsdet
 
     def _sample(self, num_samples, conds, context):
         embedded_context = self._embedding_net(context)
-        noise = self._distribution.sample(num_samples, context=embedded_context)
+        noise = self._distribution.sample(num_samples, conds, context=embedded_context)
 
         if embedded_context is not None:
             # Merge the context dimension with sample dimension in order to apply the transform.

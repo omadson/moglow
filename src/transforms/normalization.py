@@ -1,6 +1,7 @@
 from torch import nn
 import torch
 from nflows import transforms
+from nflows.utils import torchutils
 
 from src.transforms import thops
 
@@ -33,8 +34,8 @@ class _ActNorm(transforms.Transform):
             return
         assert input.device == self.bias.device
         with torch.no_grad():
-            bias = thops.mean(input.clone(), dim=[0, 2], keepdim=True) * -1.0
-            vars = thops.mean((input.clone() + bias) ** 2, dim=[0, 2], keepdim=True)
+            bias = thops.mean(input, dim=[0, 2], keepdim=True) * -1.0
+            vars = thops.mean((input + bias) ** 2, dim=[0, 2], keepdim=True)
             logs = torch.log(self.scale/(torch.sqrt(vars)+1e-6))
             self.bias.data.copy_(bias.data)
             self.logs.data.copy_(logs.data)
@@ -53,12 +54,12 @@ class _ActNorm(transforms.Transform):
         else:
             input = input * torch.exp(-logs)
         
-        dlogdet = thops.sum(logs) * thops.timesteps(input)
+        dlogdet = torchutils.sum_except_batch(logs, num_batch_dims=1) * thops.timesteps(input)
         if reverse:
-            dlogdet = -thops.sum(logs) * thops.timesteps(input)
+            dlogdet = -torchutils.sum_except_batch(logs, num_batch_dims=1) * thops.timesteps(input)
         return input, dlogdet
 
-    def forward(self, input, conds=None, context=None):
+    def forward(self, input, conds=None, context=None, point=False):
         if not self.inited:
             self.initialize_parameters(input)
         self._check_input_dim(input)
@@ -66,7 +67,9 @@ class _ActNorm(transforms.Transform):
         # center and scale
         input = self._center(input, reverse=False)
         input, logdet = self._scale(input, reverse=False)
-        return input, logdet
+        if point:
+            return input, logdet, logdet * torch.ones(input.shape[0], input.shape[2])
+        return input, logdet * torch.ones(input.shape[0])
     
     def inverse(self, input, conds=None, context=None):
         # scale and center

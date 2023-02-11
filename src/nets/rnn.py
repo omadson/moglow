@@ -41,5 +41,14 @@ class LSTM(nn.Module):
         # shape of lstm_out: [batch_size, input_size, hidden_dim]
         # shape of self.hidden: (a, b), where a and b both 
         # have shape (batch_size, num_layers, hidden_dim).
+        # print(inputs.shape)
+        
+        # Initialize hidden state with zeros
+        # h0 = torch.zeros(self.num_layers, inputs.size(0), self.hidden_channels, dtype=float).requires_grad_()
+        # Initialize cell state
+        # c0 = torch.zeros(self.num_layers, inputs.size(0), self.hidden_channels, dtype=float).requires_grad_()
+        # hidden = (h0.detach(), c0.detach())
+        # lstm_out, (hn, cn) = self.lstm(inputs, hidden)
+        
         lstm_out, self.hidden = self.lstm(inputs, self.hidden)
         return self.linear(lstm_out)

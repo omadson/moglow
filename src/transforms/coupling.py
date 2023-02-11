@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from nflows import transforms
+from nflows.utils import torchutils
 
 from src.transforms import thops
 from ..nets import LSTM, LinearZeroInit
@@ -49,7 +50,7 @@ class AffineCouplingTransform(transforms.Transform):
                 LinearZeroInit(hidden_channels, out_channels)
             ).double()
 
-    def forward(self, inputs, conds=None, context=None):
+    def forward(self, inputs, conds=None, context=None, point=False):
         z1, z2 = thops.split_feature(inputs, "split")
         z1_cond = torch.cat((z1, conds), dim=1)
         if self.flow_coupling == 'additive':
@@ -62,18 +63,21 @@ class AffineCouplingTransform(transforms.Transform):
             z2 = z2 + shift
             z2 = z2 * scale
             logdet = thops.sum(torch.log(scale), dim=[1, 2])
+            point_logdet = thops.sum(torch.log(scale), dim=[1]) * inputs.shape[2] * inputs.shape[1]
         z = thops.cat_feature(z1, z2)
+        if point:
+            return z, logdet, point_logdet
         return z, logdet
 
     def inverse(self, inputs, conds=None, context=None):
         z1, z2 = thops.split_feature(inputs, "split")
         z1_cond = torch.cat((z1, conds), dim=1)
         if self.flow_coupling == "additive":
-            z2 = z2 - self.f(z1_cond.permute(0, 2, 1)).permute(0, 2, 1)
+            z2 = z2 - self.f(z1_cond.permute(0, 2, 1).contiguous()).permute(0, 2, 1).contiguous()
             logdet = torch.zeros_like(inputs[:, 0, 0])
             z = thops.cat_feature(z1, z2)
         elif self.flow_coupling == "affine":
-            h = self.f(z1_cond.permute(0, 2, 1)).permute(0, 2, 1)
+            h = self.f(z1_cond.permute(0, 2, 1).contiguous()).permute(0, 2, 1).contiguous()
             shift, scale = thops.split_feature(h, "cross")
             nan_throw(shift, "shift")
             nan_throw(scale, "scale")

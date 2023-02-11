@@ -1,3 +1,4 @@
+from tqdm.notebook import trange, tqdm
 from torch import optim
 
 
@@ -16,20 +17,23 @@ class Trainer:
             return -model.log_prob(inputs=data_batch['x'], conds=data_batch['cond']).mean()
         return self.loss_function(model, data_batch)
 
-    def fit(self, model, train_dataloader, log_interval=10):
+    def fit(self, model, train_dataloader, log_times=10):
+        log_interval = int(self.max_epochs / log_times)
         self.optimizer = optim.Adam(
             model.parameters(),
             lr=self.learning_rate,
             weight_decay=self.weight_decay
         )
         self.loss_list = []
-        for epoch in range(1, self.max_epochs+1):
+        # for epoch in range(1, self.max_epochs+1):
+        for epoch in trange(self.max_epochs, desc="Training model", unit="epoch"):
             running_loss = 0.0
             model.train()
             for i, data_batch in enumerate(train_dataloader):
-                if epoch == 1:
+                if epoch == 0:
                     model.init_lstm_hidden(data_batch['x'].shape[0])
-                model.repackage_lstm_hidden()
+                else:
+                    model.repackage_lstm_hidden()
                 self.optimizer.zero_grad()
                 loss = self.loss_func(model, data_batch)
                 loss.backward()
@@ -37,5 +41,5 @@ class Trainer:
                 running_loss += loss.item()
             epoch_loss = running_loss / (i+1)
             self.loss_list.append(epoch_loss)
-            if (epoch % log_interval == 0) or (epoch == 1):
+            if (epoch % log_interval == 0) or (epoch == 0):
                 print(f" - Epoch {epoch:3d}/{self.max_epochs:3d}: {epoch_loss:.3f}")
