@@ -29,7 +29,6 @@ class LSTM(nn.Module):
         self.linear = LinearZeroInit(self.hidden_channels, out_channels).double()
     
     def init_hidden(self, batch_size):
-        """a"""
         weight = next(self.parameters()).data
         self.hidden = (
             Variable(weight.new(self.num_layers, batch_size, self.hidden_channels).zero_()),

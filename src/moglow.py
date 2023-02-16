@@ -62,18 +62,39 @@ class Moglow(Flow):
         )
         
     def init_lstm_hidden(self, batch_size):
-        layer_transforms = [layer._transforms[-1] for layer in next(self._transform.children())[:-1]]
+        # for step_transforms in self._transform.children():
+        #     for step_transform in step_transforms:
+        #         for transform in step_transform.children():
+        #             for inner_transform in transform:
+        #                 if isinstance(inner_transform, AffineCouplingTransform):
+        #                     if inner_transform.network.lower() == 'lstm':
+        #                         inner_transform.f.init_hidden(inputs['x'].shape[0])
+        #                         z1, z2 = thops.split_feature(inputs['x'], "split")
+        #                         z1_cond = torch.cat((z1, inputs['cond']), dim=1)  
+        #                         inner_transform.f(z1_cond.permute(0, 2, 1))
+        layer_transforms = [layer._transforms[-1] for layer in next(self._transform.children())]
         for layer_transform in layer_transforms:
             if layer_transform.network.lower() == 'lstm':
                 layer_transform.f.init_hidden(batch_size)
+                
     
     def repackage_lstm_hidden(self):
-        layer_transforms = [layer._transforms[-1] for layer in next(self._transform.children())[:-1]]
+        layer_transforms = [layer._transforms[-1] for layer in next(self._transform.children())]
         for layer_transform in layer_transforms:
             if layer_transform.network.lower() == 'lstm':
                 layer_transform.f.hidden = tuple(
                     Variable(v.data) for v in layer_transform.f.hidden
                 )
+        
+         # for step_transforms in self._transform.children():
+         #    for step_transform in step_transforms:
+         #        for transform in step_transform.children():
+         #            for inner_transform in transform:
+         #                if isinstance(inner_transform, AffineCouplingTransform):
+         #                    if inner_transform.network.lower() == 'lstm':
+         #                        inner_transform.f.hidden = tuple(
+         #                            Variable(v.data) for v in inner_transform.f.hidden
+         #                        )
                             
     def concat_sequence(self, seqlen, data):
         """ 
@@ -88,7 +109,7 @@ class Moglow(Flow):
         for ii in range(0,seqlen):  
             inds[:, ii] = rng[ii:(n_timesteps-(seqlen-ii-1))]
 
-        #slice each sample into L sequences and store as new samples 
+        # slice each sample into L sequences and store as new samples 
         cc = data[:,inds,:].copy()
 
         #print ("cc: " + str(cc.shape))
@@ -112,7 +133,6 @@ class Moglow(Flow):
         )
         # Loop through control sequence and generate new data
         for i in range(0, autoreg_all.shape[2]-sequence_length+1):
-            # print(f'Gerando o step {i}')
             # sample from Moglow
             self.eval()
             if i == 0:
