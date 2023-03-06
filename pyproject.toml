@@ -5,7 +5,7 @@ description = ""
 authors = ["Madson Dias <madsonddias@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "~3.8"
+python = "^3.8"
 numpy = "^1.22.3"
 pandas = "^1.4.2"
 scikit-learn = "^1.0.2"
@@ -16,6 +16,10 @@ seaborn = "^0.11.2"
 nflows = "^0.14"
 jupyterlab = "^3.5.1"
 ipywidgets = "^8.0.3"
+liac-arff = "^2.5.0"
+typer = "^0.7.0"
+rich = "^13.3.1"
+pydantic = "^1.10.5"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
