@@ -1,77 +1,80 @@
-from sys import getsizeof
+from enum import Enum
+
 import numpy as np
-import torch
-from torch import optim
-from torch.utils.data import DataLoader
 from torch.autograd import Variable
-from nflows import transforms, distributions
+from pydantic import BaseModel, PositiveInt, conint
 
 from .flow import Flow
 from .distribuitions import StandardNormal
 from .transforms import (
-    thops,
     CompositeTransform,
     ActNorm2d,
     InvertibleConv1x1,
     AffineCouplingTransform,
-    ReshapeTransform
 )
+
+
+class CouplingFlowTypes(str, Enum):
+    affine = "affine"
+    additive = "additive"
+
+
+class CouplingNetworkTypes(str, Enum):
+    ff = 'ff'
+    lstm = 'lstm'
+    gru = 'gru'
+
+
+class MoglowConfig(BaseModel):
+    num_features: PositiveInt
+    num_conditional_features: PositiveInt
+    sequence_length: PositiveInt = 3
+    num_layers: conint(gt=1, lt=30) = 3
+    num_blocks_per_layer: conint(gt=1, lt=30) = 2
+    coupling_flow: CouplingFlowTypes = CouplingFlowTypes.affine
+    coupling_network: CouplingNetworkTypes = CouplingNetworkTypes.ff
+    num_hidden_features: conint(gt=2, lt=2**10) = 2**5
 
 
 class Moglow(Flow):
     def __init__(
         self,
-        features,
-        conditional_features,
+        num_features,
+        num_conditional_features,
         sequence_length,
         num_layers=3,
         coupling_flow='affine',
         coupling_network='LSTM',
-        hidden_features=128,
-        num_blocks_per_layer=2
+        num_hidden_features=128,
+        num_blocks_per_layer=2,
     ):
         self.num_blocks_per_layer = num_blocks_per_layer
-        self.hidden_features = hidden_features
+        self.num_hidden_features = num_hidden_features
 
         layers = []
         for _ in range(num_layers):
             layers.append(CompositeTransform([
                 # 1. actnorm
-                ActNorm2d(features), 
+                ActNorm2d(num_features), 
                 # 2. permute
-                InvertibleConv1x1(features, LU_decomposed=True), 
+                InvertibleConv1x1(num_features, LU_decomposed=True), 
                 # 3. coupling
                 AffineCouplingTransform(
-                    in_channels=features,
-                    cond_channels=conditional_features,
-                    hidden_channels=hidden_features,
+                    in_channels=num_features,
+                    cond_channels=num_conditional_features,
+                    hidden_channels=num_hidden_features,
                     network=coupling_network,
                     num_blocks_per_layer=num_blocks_per_layer,
                     flow_coupling=coupling_flow
                 ) 
             ]))
-        
-        # layers.append(ReshapeTransform(
-        #     input_shape = (features, sequence_length),
-        #     output_shape = (features * sequence_length,)
-        # ))
 
         super().__init__(
             transform=CompositeTransform(layers),
-            distribution=StandardNormal((features, sequence_length,)),
+            distribution=StandardNormal((num_features, sequence_length,)),
         )
         
     def init_lstm_hidden(self, batch_size):
-        # for step_transforms in self._transform.children():
-        #     for step_transform in step_transforms:
-        #         for transform in step_transform.children():
-        #             for inner_transform in transform:
-        #                 if isinstance(inner_transform, AffineCouplingTransform):
-        #                     if inner_transform.network.lower() == 'lstm':
-        #                         inner_transform.f.init_hidden(inputs['x'].shape[0])
-        #                         z1, z2 = thops.split_feature(inputs['x'], "split")
-        #                         z1_cond = torch.cat((z1, inputs['cond']), dim=1)  
-        #                         inner_transform.f(z1_cond.permute(0, 2, 1))
         layer_transforms = [layer._transforms[-1] for layer in next(self._transform.children())]
         for layer_transform in layer_transforms:
             if layer_transform.network.lower() == 'lstm':
@@ -85,16 +88,6 @@ class Moglow(Flow):
                 layer_transform.f.hidden = tuple(
                     Variable(v.data) for v in layer_transform.f.hidden
                 )
-        
-         # for step_transforms in self._transform.children():
-         #    for step_transform in step_transforms:
-         #        for transform in step_transform.children():
-         #            for inner_transform in transform:
-         #                if isinstance(inner_transform, AffineCouplingTransform):
-         #                    if inner_transform.network.lower() == 'lstm':
-         #                        inner_transform.f.hidden = tuple(
-         #                            Variable(v.data) for v in inner_transform.f.hidden
-         #                        )
                             
     def concat_sequence(self, seqlen, data):
         """ 
