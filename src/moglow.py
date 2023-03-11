@@ -30,10 +30,10 @@ class MoglowConfig(BaseModel):
     num_conditional_features: PositiveInt
     sequence_length: PositiveInt = 3
     num_layers: conint(gt=1, lt=30) = 3
-    num_blocks_per_layer: conint(gt=1, lt=30) = 2
     coupling_flow: CouplingFlowTypes = CouplingFlowTypes.affine
     coupling_network: CouplingNetworkTypes = CouplingNetworkTypes.ff
     num_hidden_features: conint(gt=2, lt=2**10) = 2**5
+    num_hidden_blocks: conint(gt=1, lt=30) = 2
 
 
 class Moglow(Flow):
@@ -46,9 +46,9 @@ class Moglow(Flow):
         coupling_flow='affine',
         coupling_network='LSTM',
         num_hidden_features=128,
-        num_blocks_per_layer=2,
+        num_hidden_blocks=2,
     ):
-        self.num_blocks_per_layer = num_blocks_per_layer
+        self.num_blocks_per_layer = num_hidden_blocks
         self.num_hidden_features = num_hidden_features
 
         layers = []
@@ -64,7 +64,7 @@ class Moglow(Flow):
                     cond_channels=num_conditional_features,
                     hidden_channels=num_hidden_features,
                     network=coupling_network,
-                    num_blocks_per_layer=num_blocks_per_layer,
+                    num_blocks_per_layer=num_hidden_blocks,
                     flow_coupling=coupling_flow
                 ) 
             ]))
