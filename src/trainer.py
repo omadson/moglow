@@ -8,8 +8,8 @@ class Trainer:
             self,
             max_epochs=100,
             batch_size=64,
-            weight_decay=1e-3,
-            learning_rate=1e-4,
+            weight_decay=1e-5,
+            learning_rate=1e-2,
             loss_function=None,
             max_time=-1
         ):
@@ -22,7 +22,10 @@ class Trainer:
     
     def loss_func(self, model, data_batch):
         if not self.loss_function:
-            return -model.log_prob(inputs=data_batch['x'], conds=data_batch['cond']).mean()
+            return -model.log_prob(
+                inputs=data_batch['x'],
+                conds=data_batch['cond']
+            ).mean()
         return self.loss_function(model, data_batch)
 
     def fit(self, model, train_set, log_times=10):
@@ -32,11 +35,12 @@ class Trainer:
             shuffle=True
         )
         log_interval = int(self.max_epochs / log_times)
-        self.optimizer = optim.Adam(
+        self.optimizer = optim.AdamW(
             model.parameters(),
             lr=self.learning_rate,
             weight_decay=self.weight_decay
         )
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, 5, 0.9)
         self.training_loss = []
         for epoch in trange(self.max_epochs, desc="Training model", unit="epoch"):
             running_loss = 0.0
@@ -45,11 +49,12 @@ class Trainer:
                 if epoch == 0:
                     model.init_lstm_hidden(data_batch['x'].shape[0])
                 model.repackage_lstm_hidden()
-                self.optimizer.zero_grad()
                 loss = self.loss_func(model, data_batch)
+                self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
                 running_loss += loss.item()
+            self.scheduler.step()
             epoch_loss = running_loss / (i+1)
             self.training_loss.append(epoch_loss)
             if (epoch % log_interval == 0) or (epoch == 0):
