@@ -34,7 +34,6 @@ class GRADINGS:
             'label': dataset[:]['label'],
             'score': torch.cat(log_prob, dim=0)
         })
-        # scores = result.groupby('serie').agg(self.aggregation_functions)
         scores = (
             result
             .groupby(['serie', 'label'])
