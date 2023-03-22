@@ -48,6 +48,7 @@ class Moglow(Flow):
         num_hidden_features=128,
         num_hidden_blocks=2,
     ):
+        self.name = "moglow"
         self.num_blocks_per_layer = num_hidden_blocks
         self.num_hidden_features = num_hidden_features
 

@@ -69,8 +69,10 @@ class ExperimentDataset(Dataset):
     def __init__(
             self,
             data: np.ndarray,
-            tau: int = 3
+            tau: int = 3,
+            name: str = None
         ):
+        self.name = name
         num_samples, num_steps, num_variables = data.shape
         self.x = data.swapaxes(1, 2)[:, :, tau:]
         final_sequence_lenght = self.x.shape[2]
@@ -103,7 +105,8 @@ class ExperimentDataset(Dataset):
         return {
             'num_features': num_features, 
             'sequence_length': sequence_length,
-            'num_conditional_features': num_conditional_features
+            'num_conditional_features': num_conditional_features,
+            'name': self.name
         }
 
 output_folder = '../data/processed'    
@@ -152,8 +155,8 @@ def load_data(name: str, sequence_length: int = 10):
         test,
         sequence_length=sequence_length
     ))
-    window_train_set = ExperimentDataset(window_train, tau=sequence_length-1)
-    window_test_set = ExperimentDataset(window_test, tau=sequence_length-1)
+    window_train_set = ExperimentDataset(window_train, tau=sequence_length-1, name=name)
+    window_test_set = ExperimentDataset(window_test, tau=sequence_length-1, name=name)
     return {
         'original_train': original_train,
         'original_test': original_test,
