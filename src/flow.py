@@ -185,7 +185,7 @@ class Flow(Distribution):
         """
         embedded_context = self._embedding_net(context)
         noise, log_prob = self._distribution.sample_and_log_prob(
-            num_samples, context=embedded_context
+            num_samples, conds=conds, context=embedded_context
         )
 
         if embedded_context is not None:
@@ -217,3 +217,16 @@ class Flow(Distribution):
         """
         noise, _ = self._transform(inputs, conds, context=self._embedding_net(context))
         return noise
+    
+    def reverse_kld(self, inputs, conds, context=None, beta=1.0):
+        num_samples = conds.shape[0]
+        noise, log_prob = self._distribution.sample_and_log_prob(num_samples, conds)
+        samples, logabsdet = self._transform.inverse(noise, conds)
+        log_q = log_prob - logabsdet
+        log_p = self.log_prob(samples, conds)
+        return log_q - beta * log_p
+
+    def forward_kld(self, inputs, conds, beta=1.0):
+        noise, logabsdet = self._transform(inputs, conds)
+        log_prob = self._distribution.log_prob(inputs=noise, conds=conds)
+        return log_prob + logabsdet
