@@ -4,21 +4,23 @@ from torch.utils.data import DataLoader
 from torch import optim
 import torch
 import numpy as np
+from torch.utils.data import SubsetRandomSampler
 
 
 class EarlyStopping:
-    def __init__(self, tolerance=5, min_delta=0):
+    def __init__(self, tolerance=5, min_delta=0.0):
         self.tolerance = tolerance
         self.min_delta = min_delta
-        self.counter = 0
         self.early_stop = False
 
-    def __call__(self, train_loss, validation_loss):
-        if validation_loss:
-            if (validation_loss - train_loss) > self.min_delta:
-                self.counter +=1
-                if self.counter >= self.tolerance:  
-                    self.early_stop = True
+    def __call__(self, epoch_loss):
+        if epoch_loss['valid'][0]:
+            train_loss = np.array(epoch_loss['train'])
+            valid_loss = np.array(epoch_loss['valid'])
+            counter = np.sum((valid_loss - train_loss) > self.min_delta)
+            if counter >= self.tolerance: 
+                return True
+        return False
 
 class Trainer:
     def __init__(
@@ -29,6 +31,7 @@ class Trainer:
             learning_rate=1e-2,
             loss_function=None,
             log_times=10,
+            dataset_name: str = None,
         ):
         self.max_epochs = max_epochs
         self.batch_size = batch_size
@@ -36,6 +39,7 @@ class Trainer:
         self.learning_rate = learning_rate
         self.loss_function = loss_function
         self.log_interval = int(self.max_epochs / log_times)
+        self.dataset_name = dataset_name
     
     def _loss_func(self, model, data_batch, epoch):
         if not self.loss_function:
@@ -50,31 +54,33 @@ class Trainer:
             model.init_lstm_hidden(batch['x'].shape[0])
         model.repackage_lstm_hidden()
 
-    def fit(self, model, train_set, val_set=None):
-        early_stopping = EarlyStopping(tolerance=5, min_delta=10)
-        self.optimizer = optim.AdamW(
-            model.parameters(),
-            lr=self.learning_rate,
-            weight_decay=self.weight_decay
-        )
-        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, 5, 0.9)
-        train_loader, valid_loader = self._prepare_loaders(train_set, val_set)
-        self.epoch_loss = {'train': [], 'valid': []}
+    def fit(self, model, train_set, valid_set=None):
+        # prepare data loaders
+        train_loader, valid_loader = self._prepare_loaders(train_set, valid_set)
+        # load checkpoint
+        model, checkpoint_epoch = self._load_checkpoint(model)
+        self._early_stopping = EarlyStopping(tolerance=5, min_delta=0)
         for epoch in trange(1, self.max_epochs+1):
-            # early stop
-            early_stopping(
-                train_loss := self._train_loop(model, train_loader, epoch), # model train
-                valid_loss := self._valid_loop(model, valid_loader, epoch) # model validation
+            if epoch <= checkpoint_epoch: continue
+            self.epoch_loss['train'].append(
+                self._train_loop(model, train_loader, epoch), # model train
             )
-            # print
-            if (epoch % self.log_interval == 0) or (epoch == 1):
-                print(f" - Epoch {epoch:3d}/{self.max_epochs:3d}, train_loss={train_loss:.3f}, valid_loss={valid_loss:.3f}")
-            self.epoch_loss['train'].append(train_loss)
-            self.epoch_loss['valid'].append(valid_loss)
-            if early_stopping.early_stop:
-                print("We are at epoch:", epoch)
+            self.epoch_loss['valid'].append(
+                self._valid_loop(model, valid_loader, epoch) # model validation
+            )
+            # early stop
+            if self._early_stopping(self.epoch_loss):
+                print(" - Stopping in epoch :", epoch)
                 break
-            
+            self._save_checkpoint(model, epoch)
+            # logging
+            if (epoch % self.log_interval == 0) or (epoch == 1):
+                print(
+                    f" - Epoch {epoch:3d}/{self.max_epochs:3d},",
+                    f"train_loss={self.epoch_loss['train'][-1]:.3f},",
+                    f"valid_loss={self.epoch_loss['valid'][-1]:.3f}"
+                )
+
     def _train_loop(self, model, train_loader, epoch):
         train_losses = []
         model.train()
@@ -104,3 +110,34 @@ class Trainer:
         val_dataloader = DataLoader(train_set, batch_size=self.batch_size, shuffle=True) if val_set else None
         return train_dataloader, val_dataloader
 
+    def _load_checkpoint(self, model):
+        folder = Path(f'checkpoints/{model.name}_{self.dataset_name}/')
+        file_path = folder / 'model.ckpt'
+        self.optimizer = optim.AdamW(
+            model.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay
+        )
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, 5, 0.9)
+        self.epoch_loss = {'train': [], 'valid': []}
+        if file_path.exists():
+            checkpoint = torch.load(file_path)
+            model.load_state_dict(checkpoint['model'])
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
+            self.scheduler.load_state_dict(checkpoint['scheduler'])
+            self.epoch_loss = checkpoint['epoch_loss']
+            return model, checkpoint['epoch']
+        else:
+            return model, 0
+    
+    def _save_checkpoint(self, model, epoch):
+        folder = Path(f'checkpoints/{model.name}_{self.dataset_name}/')
+        folder.mkdir(exist_ok=True)
+        file_path = folder / 'model.ckpt'
+        torch.save({
+            'model': model.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'scheduler': self.scheduler.state_dict(),
+            'epoch_loss': self.epoch_loss,
+            'epoch': epoch,
+        }, file_path)
