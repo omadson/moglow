@@ -3,7 +3,22 @@ from tqdm.notebook import trange, tqdm
 from torch.utils.data import DataLoader
 from torch import optim
 import torch
+import numpy as np
 
+
+class EarlyStopping:
+    def __init__(self, tolerance=5, min_delta=0):
+        self.tolerance = tolerance
+        self.min_delta = min_delta
+        self.counter = 0
+        self.early_stop = False
+
+    def __call__(self, train_loss, validation_loss):
+        if validation_loss:
+            if (validation_loss - train_loss) > self.min_delta:
+                self.counter +=1
+                if self.counter >= self.tolerance:  
+                    self.early_stop = True
 
 class Trainer:
     def __init__(
@@ -13,16 +28,16 @@ class Trainer:
             weight_decay=1e-5,
             learning_rate=1e-2,
             loss_function=None,
-            max_time=-1,
+            log_times=10,
         ):
         self.max_epochs = max_epochs
         self.batch_size = batch_size
-        self.max_time = max_time # TODO: stop training cycle with a max time
         self.weight_decay = weight_decay
         self.learning_rate = learning_rate
         self.loss_function = loss_function
+        self.log_interval = int(self.max_epochs / log_times)
     
-    def loss_func(self, model, data_batch, epoch):
+    def _loss_func(self, model, data_batch, epoch):
         if not self.loss_function:
             return -model.log_prob(
                 inputs=data_batch['x'],
@@ -30,75 +45,62 @@ class Trainer:
             ).mean()
         return self.loss_function(model, data_batch, epoch)
 
-    def _lstm_step(self, epoch, model, data_batch):
+    def _lstm_step(self, epoch, model, batch):
         if epoch == 0:
-            model.init_lstm_hidden(data_batch['x'].shape[0])
+            model.init_lstm_hidden(batch['x'].shape[0])
         model.repackage_lstm_hidden()
 
-    def fit(self, model, train_set, log_times=10):
-        self.dataset_name = train_set.info()['name']
-        train_dataloader = DataLoader(
-            train_set,
-            batch_size=self.batch_size,
-            shuffle=True
-        )
-        log_interval = int(self.max_epochs / log_times)
-        model, _epoch = self._prepare_model(model)
-        for epoch in trange(_epoch+1, self.max_epochs, desc="Training model", unit="epoch"):
-            running_loss = 0.0
-            model.train()
-            for i, data_batch in enumerate(train_dataloader):
-                if model.name == "moglow":
-                    self._lstm_step(epoch, model, data_batch)
-                loss = self.loss_func(model, data_batch, epoch)
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-                running_loss += loss.item()
-            self.scheduler.step()
-            epoch_loss = running_loss / (i+1)
-            self.training_loss.append(epoch_loss)
-            self._save_model(
-                model = model,
-                optimizer = self.optimizer,
-                scheduler = self.scheduler,
-                epoch = epoch,
-                training_loss = self.training_loss
-            )
-            if (epoch % log_interval == 0) or (epoch == 0):
-                print(f" - Epoch {epoch:3d}/{self.max_epochs:3d}: {epoch_loss:.3f}")
-
-    def _save_model(self, model, optimizer, scheduler, epoch, training_loss):
-        folder = Path(f'checkpoints/{model.name}_{self.dataset_name}/')
-        folder.mkdir(exist_ok=True)
-        file_path = f'{folder}/model.ckpt'
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict(),
-            'training_loss': training_loss
-        }, file_path)
-    
-    def _prepare_model(self, model):
-        folder = Path(f'checkpoints/{model.name}_{self.dataset_name}/')
-        file_path = Path(f'{folder}/model.ckpt')
+    def fit(self, model, train_set, val_set=None):
+        early_stopping = EarlyStopping(tolerance=5, min_delta=10)
         self.optimizer = optim.AdamW(
             model.parameters(),
             lr=self.learning_rate,
             weight_decay=self.weight_decay
         )
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, 5, 0.9)
-        self.training_loss = []
-        if file_path.exists():
-            print(f"Loading pre-trained model: {model.name}")
-            checkpoint = torch.load(file_path)
-            model.load_state_dict(checkpoint['model_state_dict'])
-            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-            epoch = checkpoint['epoch']
-            self.training_loss = checkpoint['training_loss']
+        train_loader, valid_loader = self._prepare_loaders(train_set, val_set)
+        self.epoch_loss = {'train': [], 'valid': []}
+        for epoch in trange(1, self.max_epochs+1):
+            # early stop
+            early_stopping(
+                train_loss := self._train_loop(model, train_loader, epoch), # model train
+                valid_loss := self._valid_loop(model, valid_loader, epoch) # model validation
+            )
+            # print
+            if (epoch % self.log_interval == 0) or (epoch == 1):
+                print(f" - Epoch {epoch:3d}/{self.max_epochs:3d}, train_loss={train_loss:.3f}, valid_loss={valid_loss:.3f}")
+            self.epoch_loss['train'].append(train_loss)
+            self.epoch_loss['valid'].append(valid_loss)
+            if early_stopping.early_stop:
+                print("We are at epoch:", epoch)
+                break
+            
+    def _train_loop(self, model, train_loader, epoch):
+        train_losses = []
+        model.train()
+        for batch in train_loader:
+            loss = self._loss_func(model, batch, epoch)
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+            train_losses.append(loss.item())
+        self.scheduler.step()
+        return np.average(train_losses)
+    
+    def _valid_loop(self, model, valid_loader, epoch):
+        if valid_loader: 
+            valid_losses = []
+            model.eval()
+            with torch.no_grad():
+                for batch in valid_loader:
+                    loss_valid = self._loss_func(model, batch, epoch)
+                    valid_losses.append(loss_valid.item())
+            return np.average(valid_losses)
         else:
-            print(f"Creating new model: {model.name}")
-            epoch = -1
-        return model, epoch
+            return None
+    
+    def _prepare_loaders(self, train_set, val_set):
+        train_dataloader = DataLoader(train_set, batch_size=self.batch_size, shuffle=True)
+        val_dataloader = DataLoader(train_set, batch_size=self.batch_size, shuffle=True) if val_set else None
+        return train_dataloader, val_dataloader
+

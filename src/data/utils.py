@@ -99,6 +99,8 @@ class ExperimentDataset(Dataset):
             'x': self.x[idx,:,:],
             'cond': self.cond[idx,:,:],
         }
+    
+    @property
     def info(self):
         num_features, sequence_length = self[0]['x'].shape
         num_conditional_features, _ = self[0]['cond'].shape
@@ -143,7 +145,7 @@ def load_dataset(dataset, less=False):
 	labels = loader[2]
 	return train_loader, test_loader, labels
 
-def load_data(name: str, sequence_length: int = 10):
+def load_data(name: str, sequence_length: int = 10, valid_set=True):
     train_loader, test_loader, labels = load_dataset(name)
     train, test = next(iter(train_loader)), next(iter(test_loader))
     original_train, original_test = train, test
@@ -156,12 +158,28 @@ def load_data(name: str, sequence_length: int = 10):
         sequence_length=sequence_length
     ))
     window_train_set = ExperimentDataset(window_train, tau=sequence_length-1, name=name)
+    window_valid_set = None
+    if valid_set:
+        window_train_set, window_valid_set = torch.utils.data.random_split(window_train_set, [.8, .2])
+        window_train_set.info = data_info(window_train_set, name=name)
+        window_valid_set.info = data_info(window_valid_set, name=name)
     window_test_set = ExperimentDataset(window_test, tau=sequence_length-1, name=name)
+
     return {
         'original_train': original_train,
         'original_test': original_test,
         'window_train': window_train_set,
         'window_test': window_test_set,
+        'window_valid': window_valid_set,
         'labels': labels
     }
     
+def data_info(dataset, name):
+    num_features, sequence_length = dataset[0]['x'].shape
+    num_conditional_features, _ = dataset[0]['cond'].shape
+    return {
+        'num_features': num_features, 
+        'sequence_length': sequence_length,
+        'num_conditional_features': num_conditional_features,
+        'name': name
+    }
