@@ -68,8 +68,8 @@ class _ActNorm(transforms.Transform):
         input = self._center(input, reverse=False)
         input, logdet = self._scale(input, reverse=False)
         if point:
-            return input, logdet, logdet * torch.ones(input.shape[0], input.shape[2])
-        return input, logdet * torch.ones(input.shape[0])
+            return input, logdet, logdet * torch.ones(input.shape[0], input.shape[2], device=input.device)
+        return input, logdet * torch.ones(input.shape[0], device=input.device)
     
     def inverse(self, input, conds=None, context=None):
         # scale and center
