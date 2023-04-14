@@ -1,12 +1,14 @@
 from enum import Enum
 
 import numpy as np
+import torch
 from torch.autograd import Variable
+from torch.utils.data import DataLoader
 from pydantic import BaseModel, PositiveInt, conint
 
-from .flow import Flow
-from .distribuitions import StandardNormal
-from .transforms import (
+from ..flow import Flow
+from ..distribuitions import StandardNormal
+from ..transforms import (
     CompositeTransform,
     ActNorm2d,
     InvertibleConv1x1,
@@ -29,11 +31,11 @@ class MoglowConfig(BaseModel):
     num_features: PositiveInt
     num_conditional_features: PositiveInt
     sequence_length: PositiveInt = 3
-    num_layers: conint(gt=1, lt=30) = 3
+    num_layers: conint(gt=0, lt=30) = 3
     coupling_flow: CouplingFlowTypes = CouplingFlowTypes.affine
     coupling_network: CouplingNetworkTypes = CouplingNetworkTypes.ff
     num_hidden_features: conint(gt=2, lt=2**10) = 2**5
-    num_hidden_blocks: conint(gt=1, lt=30) = 2
+    num_hidden_blocks: conint(gt=0, lt=30) = 2
 
 
 class Moglow(Flow):
@@ -152,3 +154,71 @@ class Moglow(Flow):
 
     def count_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
+class MoglowTrainer:
+    @staticmethod
+    def create(dataset_info, config, device):
+        return Moglow(
+            **MoglowConfig(
+                **dataset_info,
+                **config
+            ).dict()
+        ).to(device)
+    
+    @staticmethod
+    def train(model, optimizer, scheduler, train_loader, device=None):
+        device = device or torch.device("cpu")
+        running_loss = []
+        model.train()
+        for data in train_loader:
+            inputs = data['x'].to(device)
+            conds = data['cond'].to(device)
+            if model.name.startswith('moglow'):
+                model.init_lstm_hidden(inputs.shape[0])
+            optimizer.zero_grad()
+            loss = -model.log_prob(inputs=inputs, conds=conds).mean()
+            loss.backward()
+            optimizer.step()
+            running_loss.append(loss.cpu().item())
+        scheduler.step()
+        return np.average(running_loss)
+    
+    @staticmethod
+    def validation(model, valid_loader, device):
+        device = device or torch.device("cpu")
+        valid_losses = []
+        model.eval()
+        with torch.no_grad():
+            for data in valid_loader:
+                inputs = data['x'].to(device)
+                conds = data['cond'].to(device)
+                if model.name.startswith('moglow'):
+                    model.init_lstm_hidden(inputs.shape[0])
+                loss_valid = -model.log_prob(inputs=inputs, conds=conds).mean()
+                valid_losses.append(loss_valid.cpu().item())
+        return np.average(valid_losses)
+    
+    @staticmethod
+    def get_scores(model, data_set, device):
+        batch_size = 128
+        data_loader = DataLoader(
+            data_set,
+            batch_size=batch_size
+        )
+
+        model.eval()
+        with torch.no_grad():
+            log_prob = []
+            for i, data_batch in enumerate(data_loader):
+                model.init_lstm_hidden(data_batch['x'].shape[0])
+                log_prob.append(
+                    -model
+                    .log_prob(
+                        inputs=data_batch['x'].to(device),
+                        conds=data_batch['cond'].to(device)
+                    )
+                )
+        return torch.cat(log_prob, dim=0)
+
+    

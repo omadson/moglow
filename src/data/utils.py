@@ -76,7 +76,7 @@ class ExperimentDataset(Dataset):
         num_samples, num_steps, num_variables = data.shape
         self.x = data.swapaxes(1, 2)[:, :, tau:]
         final_sequence_lenght = self.x.shape[2]
-        self.cond  = (
+        self.cond  = torch.tensor(
             sliding_window_view(data[:, :-1, :], (1, tau, num_variables))
             .squeeze()
             .reshape(num_samples, final_sequence_lenght, -1)
@@ -111,42 +111,45 @@ class ExperimentDataset(Dataset):
             'name': self.name
         }
 
-output_folder = '../data/processed'    
+output_folder = Path('data/processed').absolute()
 
 def cut_array(percentage, arr):
-	mid = round(arr.shape[0] / 2)
-	window = round(arr.shape[0] * percentage * 0.5)
-	return arr[mid - window : mid + window, :]
+    mid = round(arr.shape[0] / 2)
+    window = round(arr.shape[0] * percentage * 0.5)
+    return arr[mid - window : mid + window, :]
 
 def convert_to_windows(data, sequence_length, dimensions=2):
-	windows = []; w_size = sequence_length
-	for i, g in enumerate(data): 
-		if i >= w_size: w = data[i-w_size:i]
-		else: w = torch.cat([data[0].repeat(w_size-i, 1), data[0:i]])
-		windows.append(w if dimensions == 2 else w.view(-1))
-	return torch.stack(windows)
+    windows = []; w_size = sequence_length
+    for i, g in enumerate(data): 
+        if i >= w_size: w = data[i-w_size:i]
+        else: w = torch.cat([data[0].repeat(w_size-i, 1), data[0:i]])
+        windows.append(w if dimensions == 2 else w.view(-1))
+    return torch.stack(windows)
 
-def load_dataset(dataset, less=False):
-	folder = Path(output_folder) / dataset
-	if not folder.exists():
-		raise Exception('Processed Data not found.')
-	loader = []
-	for file in ['train', 'test', 'labels']:
-		if dataset == 'SMD': file = 'machine-1-1_' + file
-		if dataset == 'SMAP': file = 'P-1_' + file
-		if dataset == 'MSL': file = 'C-1_' + file
-		if dataset == 'UCR': file = '136_' + file
-		if dataset == 'NAB': file = 'ec2_request_latency_system_failure_' + file
-		loader.append(np.load(folder / f'{file}.npy'))
-	# loader = [i[:, debug:debug+1] for i in loader]
-	if less: loader[0] = cut_array(0.2, loader[0])
-	train_loader = DataLoader(loader[0], batch_size=loader[0].shape[0])
-	test_loader = DataLoader(loader[1], batch_size=loader[1].shape[0])
-	labels = loader[2]
-	return train_loader, test_loader, labels
+def load_dataset(dataset, folder=None, less=False):
+    if folder:
+        folder = Path(folder).absolute() / dataset
+    else:
+        folder = Path(output_folder) / dataset
+    if not folder.exists():
+        raise Exception(f'Processed Data not found. {folder}')
+    loader = []
+    for file in ['train', 'test', 'labels']:
+        if dataset == 'SMD': file = 'machine-1-1_' + file
+        if dataset == 'SMAP': file = 'P-1_' + file
+        if dataset == 'MSL': file = 'C-1_' + file
+        if dataset == 'UCR': file = '136_' + file
+        if dataset == 'NAB': file = 'ec2_request_latency_system_failure_' + file
+        loader.append(np.load(folder / f'{file}.npy'))
+    # loader = [i[:, debug:debug+1] for i in loader]
+    if less: loader[0] = cut_array(0.2, loader[0])
+    train_loader = DataLoader(loader[0], batch_size=loader[0].shape[0])
+    test_loader = DataLoader(loader[1], batch_size=loader[1].shape[0])
+    labels = loader[2]
+    return train_loader, test_loader, labels
 
-def load_data(name: str, sequence_length: int = 10, valid_set=True):
-    train_loader, test_loader, labels = load_dataset(name)
+def load_data(name: str, sequence_length: int = 10, folder=None, valid_set=True):
+    train_loader, test_loader, labels = load_dataset(name, folder)
     train, test = next(iter(train_loader)), next(iter(test_loader))
     original_train, original_test = train, test
     window_train = torch.DoubleTensor(convert_to_windows(

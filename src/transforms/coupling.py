@@ -45,8 +45,7 @@ class AffineCouplingTransform(transforms.Transform):
             self.f = nn.Sequential(
                 nn.Linear((in_channels // 2)+cond_channels, hidden_channels),
                 nn.ReLU(inplace=False),
-                nn.Linear(hidden_channels, hidden_channels),
-                nn.ReLU(inplace=False),
+                *sum([[nn.Linear(hidden_channels, hidden_channels),nn.ReLU(inplace=False)] for _ in range(num_blocks_per_layer)], []),
                 LinearZeroInit(hidden_channels, out_channels)
             ).double()
 
