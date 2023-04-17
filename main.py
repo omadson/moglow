@@ -142,7 +142,6 @@ def train_model(
         num_cpus: int = Option(1, min=1, max=8, help="Number of CPUs used into grid search"),
         results_folder: str = Option('./results', help="Local dir to save training results to"),        
     ):
-    typer.echo("Olá!")
     model_params = {}
     if model_config.exists():
         with open(model_config, 'r') as f: 
@@ -258,12 +257,12 @@ def train_model(
     console = Console()
     console.print(table)
 
-@app.command("preprocessing")
+@app.command("preprocess")
 def preprocessing_data(
         dataset: Datasets = Argument(Datasets.mba.value, help="Dataset name"),
         length: int = Argument(10, help="Sequence length of the dataset"),
     ):
-    typer.echo("algo...")
+    ...
 
 
 if __name__ == "__main__":
