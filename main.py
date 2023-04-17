@@ -68,7 +68,11 @@ class TrainModel(tune.Trainable):
 
         self.trainer = trainers[train_params['model']]
 
-        self.model = self.trainer.create(self.datasets['window_train'].info, train_params, self.device)
+        self.model = self.trainer.create(
+            self.datasets['window_train'].info,
+            config,
+            self.device
+        )
 
         self.optimizer = optim.AdamW(
             self.model.parameters(),
@@ -217,7 +221,7 @@ def train_model(
 
     trainer = trainers[train_params['model']]
 
-    best_trained_model = trainer.create(datasets['window_train'].info, train_params, device)
+    best_trained_model = trainer.create(datasets['window_train'].info, best_trial.config, device)
 
     # test best model
     best_checkpoint = torch.load(Path(best_trial.checkpoint.to_directory()) / "model.pth")
