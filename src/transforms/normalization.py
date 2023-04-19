@@ -47,16 +47,17 @@ class _ActNorm(transforms.Transform):
         else:
             return input - self.bias
 
-    def _scale(self, input, reverse=False):
+    def _scale(self, input, reverse=False, point=False):
         logs = self.logs
         if not reverse:
             input = input * torch.exp(logs)
         else:
             input = input * torch.exp(-logs)
-        
         dlogdet = torchutils.sum_except_batch(logs, num_batch_dims=1) * thops.timesteps(input)
         if reverse:
             dlogdet = -torchutils.sum_except_batch(logs, num_batch_dims=1) * thops.timesteps(input)
+        if point:
+            return input, dlogdet, logs * thops.timesteps(input)
         return input, dlogdet
 
     def forward(self, input, conds=None, context=None, point=False):
@@ -66,9 +67,12 @@ class _ActNorm(transforms.Transform):
         # no need to permute dims as old version
         # center and scale
         input = self._center(input, reverse=False)
-        input, logdet = self._scale(input, reverse=False)
         if point:
-            return input, logdet, logdet * torch.ones(input.shape[0], input.shape[2], device=input.device)
+            input, logdet, point_log = self._scale(input, reverse=False, point=point)
+        else:
+            input, logdet = self._scale(input, reverse=False)
+        if point:
+            return input, logdet, point_log.squeeze().repeat(input.shape[0], 1)
         return input, logdet * torch.ones(input.shape[0], device=input.device)
     
     def inverse(self, input, conds=None, context=None):

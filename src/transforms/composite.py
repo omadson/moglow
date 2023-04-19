@@ -19,15 +19,24 @@ class CompositeTransform(transforms.Transform):
         batch_size = inputs.shape[0]
         outputs = inputs
         if point:
-            total_logabsdet = torch.zeros(batch_size, inputs.shape[2])
+            total_logabsdet = torch.zeros(batch_size, inputs.shape[1]).to(inputs.device)
         else:
             total_logabsdet = inputs.new_zeros(batch_size)
         for func in funcs:
             if point:
-                
+                if func._get_name() == 'InvertibleConv1x1':
+                    permutation = func.p.argmax(dim=1).tolist()
                 outputs, _, logabsdet = func(outputs, conds, context, point)
+                if func._get_name() == 'AffineCouplingTransform' and len(permutation) != 1:
+                    logabsdet = logabsdet[:, permutation]
+                if len(logabsdet.shape) == 1:
+                    logabsdet = logabsdet.view(-1, 1)
             else:
-                outputs, logabsdet = func(outputs, conds, context)           
+                outputs, logabsdet = func(outputs, conds, context)
+            # print(func._get_name())
+            # print(" ", logabsdet.shape)
+            # print(" ", total_logabsdet.shape)
+            # print("")
             total_logabsdet += logabsdet
         if point:
             return outputs, total_logabsdet, total_logabsdet

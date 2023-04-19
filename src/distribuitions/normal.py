@@ -29,11 +29,10 @@ class StandardNormal(Distribution):
                     self._shape, inputs.shape[1:]
                 )
             )
-        neg_energy = -0.5 * \
-            torchutils.sum_except_batch(inputs ** 2, num_batch_dims=1)
+        neg_energy = -0.5 * torchutils.sum_except_batch(inputs ** 2, num_batch_dims=1)
         if point:
-            point_neg_energy = -0.5 * thops.sum(inputs ** 2, dim=1) 
-            return neg_energy - self._log_z, (point_neg_energy - self._log_z) * inputs.shape[1]
+            # point_neg_energy = -0.5 * (inputs ** 2)
+            return neg_energy - self._log_z, neg_energy - self._log_z
         return neg_energy - self._log_z
 
     def _sample(self, num_samples, conds, context):

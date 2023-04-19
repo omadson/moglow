@@ -49,7 +49,7 @@ class InvertibleConv1x1(transforms.Transform):
         self.w_shape = w_shape
         self.LU = LU_decomposed
 
-    def get_weight(self, inputs, reverse):
+    def get_weight(self, inputs, reverse, point=False):
         w_shape = self.w_shape
         if not self.LU:
             timesteps = int(inputs.size(2))
@@ -57,8 +57,7 @@ class InvertibleConv1x1(transforms.Transform):
             if not reverse:
                 weight = self.weight.view(w_shape[0], w_shape[1], 1)
             else:
-                weight = torch.inverse(self.weight)\
-                              .view(w_shape[0], w_shape[1], 1)
+                weight = torch.inverse(self.weight).view(w_shape[0], w_shape[1], 1)
             return weight, dlogdet
         else:
             self.p = self.p.to(inputs.device)
@@ -66,6 +65,7 @@ class InvertibleConv1x1(transforms.Transform):
             self.l_mask = self.l_mask.to(inputs.device)
             self.eye = self.eye.to(inputs.device)
             l = self.l * self.l_mask + self.eye
+            # print(self.p.argmax(dim=1))
             u = self.u * self.l_mask.transpose(0, 1).contiguous() + torch.diag(self.sign_s * torch.exp(self.log_s))
             dlogdet = thops.sum(self.log_s) * int(inputs.size(2))
             if not reverse:
@@ -74,18 +74,23 @@ class InvertibleConv1x1(transforms.Transform):
                 l = torch.inverse(l)
                 u = torch.inverse(u)
                 w = torch.matmul(u, torch.matmul(l, self.p.inverse()))
+            if point:
+                return w.view(w_shape[0], w_shape[1], 1), dlogdet, (self.log_s * int(inputs.size(2))).repeat(inputs.shape[0], 1)
             return w.view(w_shape[0], w_shape[1], 1), dlogdet
 
     def forward(self, inputs, conds=None, context=None, point=False):
         """
         log-det = log|abs(|W|)| * timesteps
         """
-        weight, dlogdet = self.get_weight(inputs, reverse=False)
+        if point:
+            weight, dlogdet, point_log = self.get_weight(inputs, reverse=False, point=True)
+        else:            
+            weight, dlogdet = self.get_weight(inputs, reverse=False)
         nan_throw(weight, "weight")
         nan_throw(dlogdet, "dlogdet")
         z = F.conv1d(inputs, weight.double())
         if point:
-            return z, dlogdet, dlogdet
+            return z, dlogdet, point_log
         return z, dlogdet
 
     def inverse(self, inputs, conds=None, context=None):

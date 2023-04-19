@@ -16,6 +16,11 @@ import pandas as pd
 import tqdm
 from scipy.optimize import minimize
 
+
+from src.utils import seed_everything
+
+seed_everything(42)
+
 # colors for plot
 deep_saffron = '#FF9933'
 air_force_blue = '#5D8AA8'
