@@ -200,7 +200,7 @@ class MoglowTrainer:
         return np.average(valid_losses)
     
     @staticmethod
-    def get_scores(model, data_set, device):
+    def get_scores(model, data_set, device, point=False):
         batch_size = 128
         data_loader = DataLoader(
             data_set,
@@ -216,7 +216,8 @@ class MoglowTrainer:
                     -model
                     .log_prob(
                         inputs=data_batch['x'].to(device),
-                        conds=data_batch['cond'].to(device)
+                        conds=data_batch['cond'].to(device),
+                        point=point
                     )
                 )
         return torch.cat(log_prob, dim=0)

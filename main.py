@@ -8,6 +8,7 @@ from typer import Option, Argument
 import numpy as np
 import torch
 import torch.optim as optim
+import pandas as pd
 from torch.utils.data import DataLoader
 import ray
 from ray import air, tune
@@ -19,11 +20,25 @@ from rich.table import Table
 from src.models.moglow import Moglow, MoglowConfig, MoglowTrainer
 from src.data.utils import load_data
 from src.metrics.pot import pot_eval
+from src.metrics.diagnosis import hit_att, ndcg
 
 
 trainers = {
     'Moglow': MoglowTrainer
 }
+
+def get_metric_results(train_loss, test_loss, labels, dataset):
+    df = pd.DataFrame()
+    for i in range(test_loss.shape[1]):
+        lt, l, ls = train_loss[:, i], test_loss[:, i], labels[:, i]
+        result, pred = pot_eval(lt, l, ls, dataset=dataset); #preds.append(pred)
+        df = df.append(result, ignore_index=True)
+    final_train_loss, final_test_loss = np.mean(train_loss, axis=1), np.mean(test_loss, axis=1)
+    final_labels = (np.sum(labels, axis=1) >= 1) + 0
+    result, _ = pot_eval(final_train_loss, final_test_loss, final_labels, dataset=dataset)
+    result.update(hit_att(test_loss, labels))
+    result.update(ndcg(test_loss, labels))
+    return result
 
 class EarlyStopper(Stopper):
     def __init__(self, patience=5, min_delta=0.0):
@@ -39,7 +54,7 @@ class EarlyStopper(Stopper):
             self.counter[trial_id] = 0
         elif valid_loss > self.best[trial_id] + self.min_delta:
             self.counter[trial_id] += 1
-            if self.counter[trial_id] >= self.patience:
+            if self.counter[trial_id] > self.patience:
                 return True
         else:
             self.best[trial_id] = valid_loss
@@ -80,13 +95,20 @@ class TrainModel(tune.Trainable):
             weight_decay=self.weight_decay
         )
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, 5, 0.9)
+        self.best_valid_score = None
 
     def step(self):
         # train step
         train_loss = self.trainer.train(self.model, self.optimizer, self.scheduler, self.train_loader, device=self.device)
         # valid step
         valid_loss = self.trainer.validation(self.model, self.valid_loader, device=self.device)
-        return {"valid_loss": valid_loss, "train_loss": train_loss}
+        if (self.best_valid_score == None) or (valid_loss < self.best_valid_score):
+            self.best_valid_score = valid_loss
+        return {
+            "train_loss": train_loss,
+            "valid_loss": valid_loss,
+            "best_valid_loss": self.best_valid_score,
+        }
 
     def save_checkpoint(self, checkpoint_dir):
         checkpoint_path = f"{checkpoint_dir}/model.pth"
@@ -114,7 +136,6 @@ class Models(Enum):
 
 def conf_callback(ctx: typer.Context, param: typer.CallbackParam, value: str):
     if value:
-        # typer.echo(f"Loading config file: {value}")
         try: 
             with open(value, 'r') as f:    # Load config file
                 conf = yaml.safe_load(f)
@@ -167,50 +188,60 @@ def train_model(
         'num_cpus': num_cpus,
         'results_folder': results_folder,
     }
-    
-    ray.init(num_cpus=num_cpus)
-    sched = ASHAScheduler(
-        metric="valid_loss",
-        mode="min",
-        max_t=epochs,
-        grace_period=int(epochs*.01)+1,
-        reduction_factor=2
-    )
-    tuner = tune.Tuner(
-        tune.with_resources(
-            TrainModel,
-            resources={
-                "cpu": num_cpus,
-                "gpu": 1 if tune_params['use_gpu'] else 0
-            }
-        ),
-        tune_config=tune.TuneConfig(
-            # metric="loss",
-            # mode="min",
-            scheduler=sched,
-            num_samples=tune_params['trials']
-        ),
-        param_space={
-            'tune_params': tune_params,
-            'train_params': train_params,
-            'weight_decay': train_params['weight_decay'],
-            'learning_rate': train_params['learning_rate'],
-            **{key: tune.choice(value) if isinstance(value, list) else value for key, value in model_params.items()}
-        },
-        run_config=ray.air.config.RunConfig(
-            local_dir=results_folder,
-            name=f"{model.value}_{dataset.value}",
-            checkpoint_config=ray.air.config.CheckpointConfig(
-                checkpoint_score_attribute="valid_loss",
-                checkpoint_score_order="min",
-                num_to_keep=1
-            ),
-            failure_config=air.FailureConfig(fail_fast=True),
-            stop=EarlyStopper()
+    experiment_path = Path(f"{results_folder}/{model.value}_{dataset.value}")
+    if not experiment_path.exists():
+        typer.echo("Starting a new grid search experiment.")
+        ray.init(num_cpus=num_cpus)
+        sched = ASHAScheduler(
+            metric="valid_loss",
+            mode="min",
+            max_t=epochs,
+            grace_period=int(epochs*.01)+1,
+            reduction_factor=2
         )
-    )
-    results = tuner.fit()
-    best_trial = results.get_best_result("valid_loss", "min")
+        tuner = tune.Tuner(
+            tune.with_resources(
+                TrainModel,
+                resources={
+                    "cpu": num_cpus,
+                    "gpu": 1 if tune_params['use_gpu'] else 0
+                }
+            ),
+            tune_config=tune.TuneConfig(
+                # metric="loss",
+                # mode="min",
+                scheduler=sched,
+                num_samples=tune_params['trials']
+            ),
+            param_space={
+                'tune_params': tune_params,
+                'train_params': train_params,
+                'weight_decay': train_params['weight_decay'],
+                'learning_rate': train_params['learning_rate'],
+                **{key: tune.choice(value) if isinstance(value, list) else value for key, value in model_params.items()}
+            },
+            run_config=ray.air.config.RunConfig(
+                local_dir=results_folder,
+                name=f"{model.value}_{dataset.value}",
+                checkpoint_config=ray.air.config.CheckpointConfig(
+                    checkpoint_score_attribute="valid_loss",
+                    checkpoint_score_order="min",
+                    num_to_keep=1,
+                    checkpoint_frequency=1,
+                    checkpoint_at_end=False
+                ),
+                failure_config=air.FailureConfig(fail_fast=True),
+                stop=EarlyStopper(patience=10)
+            )
+        )
+        results = tuner.fit()
+    else:
+        typer.echo("Restoring an old grid search experiment.")
+        tuner = tune.Tuner.restore(
+            path=str(experiment_path)
+        )
+        results = tuner.get_results()
+    best_trial = results.get_best_result("best_valid_loss", "min")
 
     datasets = load_data(
         name=dataset.value,
@@ -228,27 +259,31 @@ def train_model(
     best_trained_model.load_state_dict(best_checkpoint)
 
     train_set = torch.utils.data.ConcatDataset([datasets['window_train'], datasets['window_valid']])
-    train_score = trainer.get_scores(best_trained_model, train_set, device).cpu().detach().numpy()
+    # train_score = trainer.get_scores(best_trained_model, train_set, device).cpu().detach().numpy()
 
-    test_score = trainer.get_scores(best_trained_model, datasets['window_test'], device).cpu().detach().numpy()
-    labels = (np.sum(datasets['labels'], axis=1) >= 1) + 0 #datasets['labels'].any(axis=1)
-    results, predictions = pot_eval(train_score, test_score, labels, dataset.value, level=.2)
-    results.update(best_trial.config)
-    results['name'] = dataset.value
-    results['valid_loss'] = best_trial.metrics['valid_loss']
-    results['train_loss'] = best_trial.metrics['train_loss']
+    test_loss = trainer.get_scores(best_trained_model, datasets['window_test'], device, point=True).cpu().detach().numpy()
+    train_loss = trainer.get_scores(best_trained_model, datasets['window_train'], device, point=True).cpu().detach().numpy()
+    labels = datasets['labels']
 
-    table = Table(title="Best model results.")
+    metrics = get_metric_results(train_loss, test_loss, labels, dataset=dataset.value)
+
+    metrics.update(best_trial.config)
+    metrics['name'] = dataset.value
+    metrics['best_valid_loss'] = best_trial.metrics['best_valid_loss']
+    metrics['last_valid_loss'] = best_trial.metrics['valid_loss']
+    metrics['last_train_loss'] = best_trial.metrics['train_loss']
+
+    table = Table(title="Best model metrics.")
 
     table.add_column("Param", justify="right", style="cyan", no_wrap=True)
     table.add_column("Value", justify="left", style="green")
 
-    keys = ['name', 'precision', 'recall', 'ROC/AUC', 'f1']
+    keys = ['name', 'precision', 'recall', 'ROC/AUC', 'f1', 'Hit@100%', 'Hit@100%', 'NDCG@100%', 'NDCG@150%']
 
-    keys.extend([key for key in results.keys() if key not in keys])
-    final_results = {key.lower(): results[key] for key in keys}
+    keys.extend([key for key in metrics.keys() if key not in keys])
+    final_metrics = {key.lower(): metrics.get(key) for key in keys}
 
-    for key, value in final_results.items():
+    for key, value in final_metrics.items():
         if key not in ['tp', 'fp', 'tn', 'fn', 'threshold', 'tune_params', 'train_params']:
             if key in ['weight_decay']:
                 table.add_section()
