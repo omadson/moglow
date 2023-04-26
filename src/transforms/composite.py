@@ -29,14 +29,8 @@ class CompositeTransform(transforms.Transform):
                 outputs, _, logabsdet = func(outputs, conds, context, point)
                 if func._get_name() == 'AffineCouplingTransform' and len(permutation) != 1:
                     logabsdet = logabsdet[:, permutation]
-                if len(logabsdet.shape) == 1:
-                    logabsdet = logabsdet.view(-1, 1)
             else:
                 outputs, logabsdet = func(outputs, conds, context)
-            # print(func._get_name())
-            # print(" ", logabsdet.shape)
-            # print(" ", total_logabsdet.shape)
-            # print("")
             total_logabsdet += logabsdet
         if point:
             return outputs, total_logabsdet, total_logabsdet

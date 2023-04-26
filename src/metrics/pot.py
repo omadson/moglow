@@ -145,7 +145,7 @@ def pot_eval(init_score, score, label, dataset, q=1e-5, level=0.02):
     Returns:
         dict: pot result dict
     """
-    lm = lm_d[dataset][0]
+    lm = lm_d[dataset][1]
     lms = lm[0]
     while True:
         try:

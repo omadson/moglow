@@ -28,26 +28,17 @@ class LSTM(nn.Module):
         # Define the output layer
         self.linear = LinearZeroInit(self.hidden_channels, out_channels).double()
     
-    def init_hidden(self, batch_size):
-        weight = next(self.parameters()).data
-        self.hidden = (
-            Variable(weight.new(self.num_layers, batch_size, self.hidden_channels).zero_()),
-            Variable(weight.new(self.num_layers, batch_size, self.hidden_channels).zero_())
-        )
+    def init_hidden(self):
+        self.do_init = True
 
     def forward(self, inputs):
         # Forward pass through LSTM layer
         # shape of lstm_out: [batch_size, input_size, hidden_dim]
         # shape of self.hidden: (a, b), where a and b both 
         # have shape (batch_size, num_layers, hidden_dim).
-        # print(inputs.shape)
-        
-        # Initialize hidden state with zeros
-        # h0 = torch.zeros(self.num_layers, inputs.size(0), self.hidden_channels, dtype=float).requires_grad_()
-        # Initialize cell state
-        # c0 = torch.zeros(self.num_layers, inputs.size(0), self.hidden_channels, dtype=float).requires_grad_()
-        # hidden = (h0.detach(), c0.detach())
-        # lstm_out, (hn, cn) = self.lstm(inputs, hidden)
-        
-        lstm_out, self.hidden = self.lstm(inputs, self.hidden)
+        if self.do_init:
+            lstm_out, self.hidden = self.lstm(inputs)
+            self.do_init = False
+        else:
+            lstm_out, self.hidden = self.lstm(inputs, self.hidden)
         return self.linear(lstm_out)

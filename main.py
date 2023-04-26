@@ -128,6 +128,7 @@ class Datasets(Enum):
     swat = 'SWaT'
     ucr = 'UCR'
     wadi = 'WADI'
+    synthetic = 'synthetic'
 
 
 class Models(Enum):
@@ -262,7 +263,7 @@ def train_model(
     # train_score = trainer.get_scores(best_trained_model, train_set, device).cpu().detach().numpy()
 
     test_loss = trainer.get_scores(best_trained_model, datasets['window_test'], device, point=True).cpu().detach().numpy()
-    train_loss = trainer.get_scores(best_trained_model, datasets['window_train'], device, point=True).cpu().detach().numpy()
+    train_loss = trainer.get_scores(best_trained_model, train_set, device, point=True).cpu().detach().numpy()
     labels = datasets['labels']
 
     metrics = get_metric_results(train_loss, test_loss, labels, dataset=dataset.value)

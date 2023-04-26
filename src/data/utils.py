@@ -160,10 +160,15 @@ def load_data(name: str, sequence_length: int = 10, folder=None, valid_set=True)
         test,
         sequence_length=sequence_length
     ))
-    window_train_set = ExperimentDataset(window_train, tau=sequence_length-1, name=name)
+    window_train_set_original = ExperimentDataset(window_train, tau=sequence_length-1, name=name)
     window_valid_set = None
     if valid_set:
-        window_train_set, window_valid_set = torch.utils.data.random_split(window_train_set, [.8, .2])
+        window_train_set, window_valid_set = (
+            torch
+            .utils
+            .data
+            .random_split(window_train_set_original, [.8, .2])
+        )
         window_train_set.info = data_info(window_train_set, name=name)
         window_valid_set.info = data_info(window_valid_set, name=name)
     window_test_set = ExperimentDataset(window_test, tau=sequence_length-1, name=name)
@@ -171,6 +176,7 @@ def load_data(name: str, sequence_length: int = 10, folder=None, valid_set=True)
     return {
         'original_train': original_train,
         'original_test': original_test,
+        'window_train_original': window_train_set_original,
         'window_train': window_train_set,
         'window_test': window_test_set,
         'window_valid': window_valid_set,

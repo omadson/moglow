@@ -64,7 +64,11 @@ class AffineCouplingTransform(transforms.Transform):
             logdet = thops.sum(torch.log(scale), dim=[1, 2])
         z = thops.cat_feature(z1, z2)
         if point:
-            point_logdet = thops.cat_feature(torch.zeros_like(z1), torch.log(scale)).squeeze()
+            point_logdet = (
+                thops
+                .cat_feature(torch.zeros_like(z1), torch.log(scale))
+                .squeeze(dim=2)
+            )
             return z, logdet, point_logdet
         return z, logdet
 
