@@ -79,8 +79,8 @@ class ExperimentDataset(Dataset):
         self.cond  = torch.tensor(
             sliding_window_view(data[:, :-1, :], (1, tau, num_variables))
             .squeeze()
-            .reshape(num_samples, final_sequence_lenght, -1)
-            .swapaxes(2, 1)
+            # .reshape(num_samples, final_sequence_lenght, -1)
+            # .swapaxes(2, 1)
         )
             
     def __len__(self):
@@ -185,10 +185,10 @@ def load_data(name: str, sequence_length: int = 10, folder=None, valid_set=True)
     
 def data_info(dataset, name):
     num_features, sequence_length = dataset[0]['x'].shape
-    num_conditional_features, _ = dataset[0]['cond'].shape
+    tao, num_conditional_features = dataset[0]['cond'].shape
     return {
         'num_features': num_features, 
         'sequence_length': sequence_length,
-        'num_conditional_features': num_conditional_features,
+        'num_conditional_features': int(num_conditional_features * tao),
         'name': name
     }

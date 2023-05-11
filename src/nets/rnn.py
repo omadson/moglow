@@ -36,9 +36,10 @@ class LSTM(nn.Module):
         # shape of lstm_out: [batch_size, input_size, hidden_dim]
         # shape of self.hidden: (a, b), where a and b both 
         # have shape (batch_size, num_layers, hidden_dim).
+        # print(inputs.shape)
         if self.do_init:
             lstm_out, self.hidden = self.lstm(inputs)
             self.do_init = False
         else:
             lstm_out, self.hidden = self.lstm(inputs, self.hidden)
-        return self.linear(lstm_out)
+        return self.linear(lstm_out[:, -1, :][:, None, :])
