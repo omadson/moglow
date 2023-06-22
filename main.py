@@ -1,6 +1,7 @@
 from typing import Optional
 from enum import Enum
 from pathlib import Path
+import shutil
 
 import yaml
 import typer
@@ -40,29 +41,29 @@ def get_metric_results(train_loss, test_loss, labels, dataset):
     result.update(ndcg(test_loss, labels))
     return result
 
-class EarlyStopper(Stopper):
-    def __init__(self, patience=5, min_delta=0.0):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = {}
-        self.best = {}
+# class EarlyStopper(Stopper):
+#     def __init__(self, patience=5, min_delta=0.0):
+#         self.patience = patience
+#         self.min_delta = min_delta
+#         self.counter = {}
+#         self.best = {}
     
-    def __call__(self, trial_id, result):
-        valid_loss = result["valid_loss"]
-        if not self.best.get(trial_id):
-            self.best[trial_id] = valid_loss
-            self.counter[trial_id] = 0
-        elif valid_loss > self.best[trial_id] + self.min_delta:
-            self.counter[trial_id] += 1
-            if self.counter[trial_id] > self.patience:
-                return True
-        else:
-            self.best[trial_id] = valid_loss
-            self.counter[trial_id] = 0
-        return False
+#     def __call__(self, trial_id, result):
+#         valid_loss = result["valid_loss"]
+#         if not self.best.get(trial_id):
+#             self.best[trial_id] = valid_loss
+#             self.counter[trial_id] = 0
+#         elif valid_loss > self.best[trial_id] + self.min_delta:
+#             self.counter[trial_id] += 1
+#             if self.counter[trial_id] > self.patience:
+#                 return True
+#         else:
+#             self.best[trial_id] = valid_loss
+#             self.counter[trial_id] = 0
+#         return False
     
-    def stop_all(self):
-        return False
+#     def stop_all(self):
+#         return False
 
 
 class TrainModel(tune.Trainable):
@@ -75,8 +76,16 @@ class TrainModel(tune.Trainable):
             name=train_params['dataset'],
             sequence_length=train_params['length'],
         )
-        self.train_loader = DataLoader(self.datasets['window_train'], batch_size=train_params['batch_size'], shuffle=True)
-        self.valid_loader = DataLoader(self.datasets['window_valid'], batch_size=train_params['batch_size'], shuffle=True)
+        self.train_loader = DataLoader(
+            self.datasets['window_train'], 
+            batch_size=train_params['batch_size'],
+            shuffle=True
+        )
+        self.valid_loader = DataLoader(
+            self.datasets['window_valid'], 
+            batch_size=train_params['batch_size'],
+            shuffle=True
+        )
 
         self.learning_rate = train_params['learning_rate']
         self.weight_decay = train_params['weight_decay']
@@ -152,7 +161,7 @@ app = typer.Typer()
 def train_model(
         model: Models = Argument(Models.moglow.value, help="Model name"),
         dataset: Datasets = Argument(Datasets.mba.value, help="Dataset name"),
-        length: int = Argument(10, help="Sequence length of the dataset"),
+        length: int = Argument(2, help="Sequence length of the dataset"),
         # model config
         model_config: Path = Option("model.yaml", help="Configuration file for train options"),
         # Train options
@@ -166,7 +175,8 @@ def train_model(
         trials: int = Option(50, min=1, max=200, help="Number of trials into grid search"),
         use_gpu: bool = Option(False, help="Enable CUDA training"),
         num_cpus: int = Option(1, min=1, max=8, help="Number of CPUs used into grid search"),
-        results_folder: str = Option('./results', help="Local dir to save training results to"),        
+        results_folder: str = Option('./results', help="Local dir to save training results to"),
+        replace: bool = Option(False, help="Replace existing results and start a new grid search")    
     ):
     model_params = {}
     if model_config.exists():
@@ -189,7 +199,9 @@ def train_model(
         'num_cpus': num_cpus,
         'results_folder': results_folder,
     }
-    experiment_path = Path(f"{results_folder}/{model.value}_{dataset.value}")
+    experiment_path = Path(f"{results_folder}/{model.value}_{model_params['coupling_network']}_{dataset.value}")
+    if replace and experiment_path.exists():
+        shutil.rmtree(experiment_path)
     if not experiment_path.exists():
         typer.echo("Starting a new grid search experiment.")
         ray.init(num_cpus=num_cpus)
@@ -223,7 +235,7 @@ def train_model(
             },
             run_config=ray.air.config.RunConfig(
                 local_dir=results_folder,
-                name=f"{model.value}_{dataset.value}",
+                name=f"{model.value}_{model_params['coupling_network']}_{dataset.value}",
                 checkpoint_config=ray.air.config.CheckpointConfig(
                     checkpoint_score_attribute="valid_loss",
                     checkpoint_score_order="min",
@@ -232,7 +244,7 @@ def train_model(
                     checkpoint_at_end=False
                 ),
                 failure_config=air.FailureConfig(fail_fast=True),
-                stop=EarlyStopper(patience=10)
+                # stop=EarlyStopper(patience=15)
             )
         )
         results = tuner.fit()
@@ -262,8 +274,8 @@ def train_model(
     train_set = torch.utils.data.ConcatDataset([datasets['window_train'], datasets['window_valid']])
     # train_score = trainer.get_scores(best_trained_model, train_set, device).cpu().detach().numpy()
 
-    test_loss = trainer.get_scores(best_trained_model, datasets['window_test'], device, point=True).cpu().detach().numpy()
-    train_loss = trainer.get_scores(best_trained_model, train_set, device, point=True).cpu().detach().numpy()
+    test_loss = trainer.get_scores(best_trained_model, datasets['window_test'], device, point=True)#.cpu().detach().numpy()
+    train_loss = trainer.get_scores(best_trained_model, train_set, device, point=True)#.cpu().detach().numpy()
     labels = datasets['labels']
 
     metrics = get_metric_results(train_loss, test_loss, labels, dataset=dataset.value)

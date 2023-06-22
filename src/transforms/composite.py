@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch import nn
 from nflows import transforms
@@ -24,11 +25,11 @@ class CompositeTransform(transforms.Transform):
             total_logabsdet = inputs.new_zeros(batch_size)
         for func in funcs:
             if point:
-                if func._get_name() == 'InvertibleConv1x1':
-                    permutation = func.p.argmax(dim=1).tolist()
                 outputs, _, logabsdet = func(outputs, conds, context, point)
-                if func._get_name() == 'AffineCouplingTransform' and len(permutation) != 1:
-                    logabsdet = logabsdet[:, permutation]
+                # if func._get_name() == 'AffineCouplingTransform' and len(permutation) != 1:
+                #     new_permutation = funcs[i-1].p.argmax(dim=1).tolist()
+                #     permutation = permutation[new_permutation]
+                #     logabsdet = logabsdet[:, permutation]
             else:
                 outputs, logabsdet = func(outputs, conds, context)
             total_logabsdet += logabsdet

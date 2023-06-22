@@ -56,10 +56,10 @@ class Moglow(Flow):
             f"moglow_{num_layers}_{coupling_flow.value}_{coupling_network.value}_"
             f"{num_hidden_blocks}_{num_hidden_features}"
         )
-
+        self.coupling_network = coupling_network
         layers = []
         for _ in range(num_layers):
-            layers.append(CompositeTransform([
+            layers.extend([
                 # 1. actnorm
                 ActNorm2d(num_features), 
                 # 2. permute
@@ -73,7 +73,7 @@ class Moglow(Flow):
                     num_blocks_per_layer=num_hidden_blocks,
                     flow_coupling=coupling_flow
                 ) 
-            ]))
+            ])
 
         super().__init__(
             transform=CompositeTransform(layers),
@@ -81,18 +81,15 @@ class Moglow(Flow):
         )
         
     def init_lstm_hidden(self):
-        layer_transforms = [layer._transforms[-1] for layer in next(self._transform.children())]
-        for layer_transform in layer_transforms:
-            if layer_transform.network.lower() == 'lstm':
-                layer_transform.f.init_hidden()
+        for transform in next(self._transform.children()):
+            if transform._get_name() == 'AffineCouplingTransform' and self.coupling_network.lower() == 'lstm':
+                transform.f.init_hidden()
                 
     def repackage_lstm_hidden(self):
-        layer_transforms = [layer._transforms[-1] for layer in next(self._transform.children())]
-        for layer_transform in layer_transforms:
-            if layer_transform.network.lower() == 'lstm':
-                layer_transform.f.hidden = tuple(
-                    Variable(v.data) for v in layer_transform.f.hidden
-                )
+        for transform in next(self._transform.children()):
+            if transform._get_name() == 'AffineCouplingTransform' and self.coupling_network.lower() == 'lstm':
+                transform.f.hidden = tuple(Variable(v.data) for v in transform.f.hidden)
+
 
     def count_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
@@ -160,6 +157,6 @@ class MoglowTrainer:
                         point=point
                     )
                 )
-        return torch.cat(log_prob, dim=0)
+        return torch.cat(log_prob, dim=0).detach().numpy()
 
     

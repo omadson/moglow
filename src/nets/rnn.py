@@ -42,4 +42,4 @@ class LSTM(nn.Module):
             self.do_init = False
         else:
             lstm_out, self.hidden = self.lstm(inputs, self.hidden)
-        return self.linear(lstm_out[:, -1, :][:, None, :])
+        return self.linear(lstm_out)#[:, -1, :][:, None, :])

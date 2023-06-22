@@ -152,14 +152,13 @@ class Flow(Distribution):
         embedded_context = self._embedding_net(context)
         if point:
             noise, _, logabsdet = self._transform(inputs, conds, context=embedded_context, point=point)
-            _, log_prob = self._distribution.log_prob(noise, context=embedded_context, conds=conds, point=point)
+            log_prob = self._distribution.log_prob(noise, context=embedded_context, conds=conds)
             if len(log_prob.shape) == 1:
                 log_prob = log_prob.view(-1, 1).repeat(1, inputs.shape[1]) / inputs.shape[1]
-            return logabsdet + log_prob
         else:
             noise, logabsdet = self._transform(inputs, conds, context=embedded_context)
             log_prob = self._distribution.log_prob(noise, context=embedded_context, conds=conds)
-            return logabsdet + log_prob
+        return log_prob + logabsdet
 
     def _sample(self, num_samples, conds, context):
         embedded_context = self._embedding_net(context)
@@ -226,7 +225,7 @@ class Flow(Distribution):
         samples, logabsdet = self._transform.inverse(noise, conds)
         log_q = log_prob - logabsdet
         log_p = self.log_prob(samples, conds)
-        return log_q - beta * log_p
+        return log_q.mean() - (beta * log_p.mean())
 
     def forward_kld(self, inputs, conds, beta=1.0):
         noise, logabsdet = self._transform(inputs, conds)

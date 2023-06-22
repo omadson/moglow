@@ -79,10 +79,10 @@ class ExperimentDataset(Dataset):
         self.cond  = torch.tensor(
             sliding_window_view(data[:, :-1, :], (1, tau, num_variables))
             .squeeze()
-            # .reshape(num_samples, final_sequence_lenght, -1)
-            # .swapaxes(2, 1)
+            .reshape(num_samples, -1, num_variables)
+            # .swapaxes(1, 0)
         )
-            
+
     def __len__(self):
         """
         Return the number of samples in the dataset.

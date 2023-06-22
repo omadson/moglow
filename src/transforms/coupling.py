@@ -52,10 +52,7 @@ class AffineCouplingTransform(transforms.Transform):
 
     def forward(self, inputs, conds=None, context=None, point=False):
         z1, z2 = thops.split_feature(inputs, "split")
-        z1_repeated = z1.repeat(1, 1, conds.shape[1]).permute(0, 2, 1)
-        z1_cond = torch.cat((z1_repeated, conds), dim=2)
-        if self.network.lower() == 'ff':
-            z1_cond = torch.cat((z1, conds.flatten(1)[:, :, None]), dim=1).permute(0, 2, 1)
+        z1_cond = torch.cat((z1.permute(0, 2, 1), conds), dim=2)
         h = self.f(z1_cond).permute(0, 2, 1)
         shift, scale = thops.split_feature(h, "cross")
         scale = torch.sigmoid(scale + 2.)+1e-6
