@@ -6,7 +6,7 @@ from nflows.utils import torchutils
 from src.transforms import thops
 
 
-class _ActNorm(transforms.Transform):
+class ActNorm(transforms.Transform):
     """
     Activation Normalization
     Initialize the bias and scale with a given minibatch,
@@ -82,7 +82,7 @@ class _ActNorm(transforms.Transform):
         return input, logdet
 
 
-class ActNorm2d(_ActNorm):
+class ActNorm2d(ActNorm):
     def __init__(self, num_features, scale=1.):
         super().__init__(num_features, scale)
 

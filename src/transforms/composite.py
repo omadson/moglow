@@ -19,19 +19,20 @@ class CompositeTransform(transforms.Transform):
     def _cascade(inputs, conds, funcs, context, point):
         batch_size = inputs.shape[0]
         outputs = inputs
+        # list_test = ['AffineCouplingTransform']#, 'ActNorm', 'RandomPermutation', 'AffineCouplingTransform']
         if point:
             total_logabsdet = torch.zeros(batch_size, inputs.shape[1]).to(inputs.device)
         else:
             total_logabsdet = inputs.new_zeros(batch_size)
         for func in funcs:
             if point:
-                outputs, _, logabsdet = func(outputs, conds, context, point)
-                # if func._get_name() == 'AffineCouplingTransform' and len(permutation) != 1:
-                #     new_permutation = funcs[i-1].p.argmax(dim=1).tolist()
-                #     permutation = permutation[new_permutation]
-                #     logabsdet = logabsdet[:, permutation]
+                outputs, _, logabsdet = func(outputs, conds=conds, context=context, point=point)
+                # if func._get_name() in list_test:
+                #     total_logabsdet += logabsdet
             else:
-                outputs, logabsdet = func(outputs, conds, context)
+                outputs, logabsdet = func(outputs, conds=conds, context=context)
+                # if func._get_name() in list_test:
+                #     total_logabsdet += logabsdet
             total_logabsdet += logabsdet
         if point:
             return outputs, total_logabsdet, total_logabsdet

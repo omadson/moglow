@@ -19,12 +19,14 @@ from rich.console import Console
 from rich.table import Table
 
 from src.models.moglow import Moglow, MoglowConfig, MoglowTrainer
+from src.models.tcnf import TCNFTrainer
 from src.data.utils import load_data
 from src.metrics.pot import pot_eval
 from src.metrics.diagnosis import hit_att, ndcg
 
 
 trainers = {
+    'TCNF': TCNFTrainer,
     'Moglow': MoglowTrainer
 }
 
@@ -142,6 +144,7 @@ class Datasets(Enum):
 
 class Models(Enum):
     moglow = 'Moglow'
+    tcnf = 'TCNF'
 
 
 def conf_callback(ctx: typer.Context, param: typer.CallbackParam, value: str):
@@ -155,6 +158,10 @@ def conf_callback(ctx: typer.Context, param: typer.CallbackParam, value: str):
             raise typer.BadParameter(str(ex))
     return value
 
+def folder_name(model_name, dataset_name, model_params):
+    net = 'lstm' if model_params['recurrent_network'] else 'ff'
+    return f'{model_name}_{net}_{dataset_name}'
+
 app = typer.Typer()
 
 @app.command("train")
@@ -165,13 +172,13 @@ def train_model(
         # model config
         model_config: Path = Option("model.yaml", help="Configuration file for train options"),
         # Train options
-        train_config: Optional[Path] = Option(None, callback=conf_callback, is_eager=False, help="Configuration file for train options"),
+        train_config: Optional[Path] = Option('config/train.yaml', callback=conf_callback, is_eager=False, help="Configuration file for train options"),
         epochs: int = Option(500, min=1, max=1000, help="Number of epochs of the training"),
         batch_size: int = Option(64, min=1, max=512, help="Number of samples per batch"),
         weight_decay: float = Option(1e-2, min=1e-6, max=1, help="Weight decay coefficient"),
         learning_rate: float = Option(1e-3, min=1e-6, max=1, help="Learning rate"),
         # Tune options
-        tune_config: Optional[Path] = Option(None, callback=conf_callback, is_eager=False, help="Configuration file for tune options"),
+        tune_config: Optional[Path] = Option('config/tune.yaml', callback=conf_callback, is_eager=False, help="Configuration file for tune options"),
         trials: int = Option(50, min=1, max=200, help="Number of trials into grid search"),
         use_gpu: bool = Option(False, help="Enable CUDA training"),
         num_cpus: int = Option(1, min=1, max=8, help="Number of CPUs used into grid search"),
@@ -199,7 +206,8 @@ def train_model(
         'num_cpus': num_cpus,
         'results_folder': results_folder,
     }
-    experiment_path = Path(f"{results_folder}/{model.value}_{model_params['coupling_network']}_{dataset.value}")
+    results_name = folder_name(model.value, dataset.value, model_params)
+    experiment_path = Path(f"{results_folder}/{results_name}")
     if replace and experiment_path.exists():
         shutil.rmtree(experiment_path)
     if not experiment_path.exists():
@@ -235,7 +243,7 @@ def train_model(
             },
             run_config=ray.air.config.RunConfig(
                 local_dir=results_folder,
-                name=f"{model.value}_{model_params['coupling_network']}_{dataset.value}",
+                name=results_name,
                 checkpoint_config=ray.air.config.CheckpointConfig(
                     checkpoint_score_attribute="valid_loss",
                     checkpoint_score_order="min",

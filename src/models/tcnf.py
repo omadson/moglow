@@ -8,98 +8,75 @@ from pydantic import BaseModel, PositiveInt, conint
 
 from ..flow import Flow
 from ..distribuitions import StandardNormal
-from ..transforms import (
-    CompositeTransform,
-    ActNorm2d,
-    InvertibleConv1x1,
-    AffineCouplingTransform,
-)
+from ..transforms import CompositeTransform
+from ..transforms.conditional.coupling import AffineCouplingTransform
+from ..transforms.conditional.permutations import RandomPermutation
+from ..transforms.conditional.normalization import ActNorm
 
 
-class CouplingFlowTypes(str, Enum):
-    affine = "affine"
-    additive = "additive"
-
-
-class CouplingNetworkTypes(str, Enum):
-    ff = 'ff'
-    lstm = 'lstm'
-    gru = 'gru'
-
-
-class MoglowConfig(BaseModel):
+class TCNFConfig(BaseModel):
     num_features: PositiveInt
-    num_conditional_features: PositiveInt
-    sequence_length: PositiveInt = 3
-    num_layers: conint(gt=0, lt=30) = 3
-    coupling_flow: CouplingFlowTypes = CouplingFlowTypes.affine
-    coupling_network: CouplingNetworkTypes = CouplingNetworkTypes.ff
-    num_hidden_features: conint(gt=2, lt=2**10) = 2**5
-    num_hidden_blocks: conint(gt=0, lt=30) = 2
+    num_flows: conint(gt=0, lt=30) = 3
+    num_network_layers: conint(gt=0, lt=30) = 2
+    num_neurons_per_layer: conint(gt=2, lt=2**10) = 2**5
+    recurrent_network: bool = True
 
-
-class Moglow(Flow):
+class TCNF(Flow):
     def __init__(
-        self,
-        num_features,
-        num_conditional_features,
-        sequence_length,
-        num_layers=3,
-        coupling_flow='affine',
-        coupling_network='LSTM',
-        num_hidden_features=128,
-        num_hidden_blocks=2,
-    ):
-        self.num_blocks_per_layer = num_hidden_blocks
-        self.num_hidden_features = num_hidden_features
-        self.name = (
-            f"moglow_{num_layers}_{coupling_flow.value}_{coupling_network.value}_"
-            f"{num_hidden_blocks}_{num_hidden_features}"
-        )
-        self.coupling_network = coupling_network
+            self,
+            num_features,
+            num_flows=3,
+            # coupling
+            num_network_layers=2,
+            num_neurons_per_layer=128,
+            recurrent_network=True,
+        ):
         layers = []
-        for _ in range(num_layers):
+        self.num_features = num_features
+        self.num_flows = num_flows
+        self.num_network_layers = num_network_layers
+        self.num_neurons_per_layer = num_neurons_per_layer
+        self.recurrent_network = recurrent_network
+        for _ in range(num_flows):
             layers.extend([
                 # 1. actnorm
-                ActNorm2d(num_features), 
+                ActNorm(num_features),
                 # 2. permute
-                InvertibleConv1x1(num_features, LU_decomposed=True), 
+                RandomPermutation(num_features),
                 # 3. coupling
                 AffineCouplingTransform(
-                    in_channels=num_features,
-                    cond_channels=num_conditional_features,
-                    hidden_channels=num_hidden_features,
-                    network=coupling_network,
-                    num_blocks_per_layer=num_hidden_blocks,
-                    flow_coupling=coupling_flow
-                ) 
+                    input_length=num_features,
+                    num_network_layers=num_network_layers,
+                    num_neurons_per_layer=num_neurons_per_layer,
+                    recurrent_network=recurrent_network,
+                )
             ])
 
         super().__init__(
             transform=CompositeTransform(layers),
-            distribution=StandardNormal((num_features, sequence_length,)),
+            distribution=StandardNormal((num_features,)),
         )
-        
+
     def init_lstm_hidden(self):
         for transform in next(self._transform.children()):
-            if transform._get_name() == 'AffineCouplingTransform' and self.coupling_network.lower() == 'lstm':
-                transform.f.init_hidden()
+            if transform._get_name() == 'AffineCouplingTransform' and self.recurrent_network:
+                transform.transform_net.init_hidden()
                 
     def repackage_lstm_hidden(self):
         for transform in next(self._transform.children()):
-            if transform._get_name() == 'AffineCouplingTransform' and self.coupling_network.lower() == 'lstm':
-                transform.f.hidden = tuple(Variable(v.data) for v in transform.f.hidden)
+            if transform._get_name() == 'AffineCouplingTransform' and self.recurrent_network:
+                transform.transform_net.hidden = tuple(Variable(v.data) for v in transform.f.hidden)
 
 
     def count_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
-class MoglowTrainer:
+class TCNFTrainer:
     @staticmethod
     def create(dataset_info, config, device):
-        return Moglow(
-            **MoglowConfig(
+        return TCNF(
+            **TCNFConfig(
                 **dataset_info,
                 **config
             ).dict()
@@ -111,8 +88,8 @@ class MoglowTrainer:
         running_loss = []
         model.train()
         for data in train_loader:
-            inputs = data['x'].to(device)#.squeeze()
-            conds = data['cond'].to(device)#.squeeze()
+            inputs = data['x'].to(device).squeeze(dim=2)
+            conds = data['cond'].to(device).squeeze(dim=1)
             model.init_lstm_hidden()
             optimizer.zero_grad()
             loss = -model.log_prob(inputs=inputs, conds=conds).mean()
@@ -129,8 +106,8 @@ class MoglowTrainer:
         model.eval()
         with torch.no_grad():
             for data in valid_loader:
-                inputs = data['x'].to(device)
-                conds = data['cond'].to(device)
+                inputs = data['x'].to(device).squeeze(dim=2)
+                conds = data['cond'].to(device).squeeze(dim=1)
                 model.init_lstm_hidden()
                 loss_valid = -model.log_prob(inputs=inputs, conds=conds).mean()
                 valid_losses.append(loss_valid.cpu().item())
@@ -152,8 +129,8 @@ class MoglowTrainer:
                 log_prob.append(
                     -model
                     .log_prob(
-                        inputs=data_batch['x'].to(device),
-                        conds=data_batch['cond'].to(device),
+                        inputs=data_batch['x'].to(device).squeeze(dim=2),
+                        conds=data_batch['cond'].to(device).squeeze(dim=1),
                         point=point
                     )
                 )
