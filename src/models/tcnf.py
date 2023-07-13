@@ -65,7 +65,7 @@ class TCNF(Flow):
     def repackage_lstm_hidden(self):
         for transform in next(self._transform.children()):
             if transform._get_name() == 'AffineCouplingTransform' and self.recurrent_network:
-                transform.transform_net.hidden = tuple(Variable(v.data) for v in transform.f.hidden)
+                transform.transform_net.hidden = tuple(Variable(v.data) for v in transform.transform_net.hidden)
 
 
     def count_parameters(self):
@@ -87,10 +87,13 @@ class TCNFTrainer:
         device = device or torch.device("cpu")
         running_loss = []
         model.train()
-        for data in train_loader:
+        for i, data in enumerate(train_loader):
             inputs = data['x'].to(device).squeeze(dim=2)
             conds = data['cond'].to(device).squeeze(dim=1)
-            model.init_lstm_hidden()
+            if i == 0:
+                model.init_lstm_hidden()
+            else:
+                model.repackage_lstm_hidden()
             optimizer.zero_grad()
             loss = -model.log_prob(inputs=inputs, conds=conds).mean()
             loss.backward()

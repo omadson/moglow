@@ -163,12 +163,23 @@ def load_data(name: str, sequence_length: int = 10, folder=None, valid_set=True)
     window_train_set_original = ExperimentDataset(window_train, tau=sequence_length-1, name=name)
     window_valid_set = None
     if valid_set:
-        window_train_set, window_valid_set = (
-            torch
-            .utils
-            .data
-            .random_split(window_train_set_original, [.8, .2])
-        )
+        # shuffle datasets
+        # window_train_set, window_valid_set = (
+        #     torch
+        #     .utils
+        #     .data
+        #     .random_split(window_train_set_original, [.8, .2])
+        # )
+        # sequential datasets
+        # Created using indices from 0 to train_size.
+        total_size = len(window_train_set_original)
+        train_size = int(0.8 * total_size)
+        test_size = total_size - train_size
+        window_train_set = torch.utils.data.Subset(window_train_set_original, range(train_size))
+
+        # Created using indices from train_size to train_size + test_size.
+        window_valid_set = torch.utils.data.Subset(window_train_set_original, range(train_size, train_size + test_size))
+
         window_train_set.info = data_info(window_train_set, name=name)
         window_valid_set.info = data_info(window_valid_set, name=name)
     window_test_set = ExperimentDataset(window_test, tau=sequence_length-1, name=name)

@@ -138,11 +138,12 @@ class RealNVPTrainer:
         with torch.no_grad():
             log_prob = []
             for i, data_batch in enumerate(data_loader):
+                data_x = data_batch['x'].to(device).squeeze(dim=2)
                 log_prob.append(
                     -model
                     .log_prob(
-                        inputs=data_batch['x'].to(device).squeeze(dim=2)
-                    )
+                        inputs=data_x
+                    ).repeat(data_x.shape[1], 1).T
                 )
         return torch.cat(log_prob, dim=0).detach().numpy()
 
