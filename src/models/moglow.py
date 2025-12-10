@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from pydantic import BaseModel, PositiveInt, conint
 
 from ..flow import Flow
-from ..distribuitions import StandardNormal
+from ..distributions import StandardNormal
 from ..transforms import (
     CompositeTransform,
     ActNorm2d,
@@ -82,12 +82,18 @@ class Moglow(Flow):
         
     def init_lstm_hidden(self):
         for transform in next(self._transform.children()):
-            if transform._get_name() == 'AffineCouplingTransform' and self.coupling_network.lower() == 'lstm':
+            if (
+                transform._get_name() == 'AffineCouplingTransform' and
+                self.coupling_network.lower() == 'lstm'
+            ):
                 transform.f.init_hidden()
                 
     def repackage_lstm_hidden(self):
         for transform in next(self._transform.children()):
-            if transform._get_name() == 'AffineCouplingTransform' and self.coupling_network.lower() == 'lstm':
+            if (
+                transform._get_name() == 'AffineCouplingTransform' and
+                self.coupling_network.lower() == 'lstm'
+            ):
                 transform.f.hidden = tuple(Variable(v.data) for v in transform.f.hidden)
 
 

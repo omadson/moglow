@@ -1,0 +1,4 @@
+num_layers: [5, 10, 15, 20]
+num_hidden_features: [32, 64, 128, 256]
+num_hidden_blocks: [1, 2, 3]
+coupling_network: 'ff'

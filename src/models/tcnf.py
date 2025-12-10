@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from pydantic import BaseModel, PositiveInt, conint
 
 from ..flow import Flow
-from ..distribuitions import StandardNormal
+from ..distributions import StandardNormal
 from ..transforms import CompositeTransform
 from ..transforms.conditional.coupling import AffineCouplingTransform
 from ..transforms.conditional.permutations import RandomPermutation
@@ -16,9 +16,9 @@ from ..transforms.conditional.normalization import ActNorm
 
 class TCNFConfig(BaseModel):
     num_features: PositiveInt
-    num_flows: conint(gt=0, lt=30) = 3
+    num_flows: conint(gt=0, lt=30) = 10
     num_network_layers: conint(gt=0, lt=30) = 2
-    num_neurons_per_layer: conint(gt=2, lt=2**10) = 2**5
+    num_neurons_per_layer: conint(gt=2, lt=2**10) = 2**8
     recurrent_network: bool = True
 
 class TCNF(Flow):

@@ -11,23 +11,24 @@ from src.nets import LSTM, LinearZeroInit
 class AffineCouplingTransform(transforms.Transform):
     def __init__(
         self,
-        input_length,
+        num_features,
+        num_conditional_features,
         num_network_layers=2,
         num_neurons_per_layer=128,
         recurrent_network=True,
     ):
         super().__init__()
-        out_channels = 2*(input_length-input_length // 2)
+        out_channels = 2*(num_features-num_features // 2)
         if recurrent_network:
             self.transform_net = LSTM(
-                (input_length // 2) + input_length,
+                (num_features // 2) + num_conditional_features,
                 num_neurons_per_layer,
                 out_channels,
                 num_network_layers
             )
         else:
             self.transform_net = nn.Sequential(
-                nn.Linear((input_length // 2)+input_length, num_neurons_per_layer),
+                nn.Linear((num_features // 2)+num_conditional_features, num_neurons_per_layer),
                 nn.ReLU(inplace=False),
                 *sum([[nn.Linear(num_neurons_per_layer, num_neurons_per_layer),nn.ReLU(inplace=False)] for _ in range(num_network_layers)], []),
                 LinearZeroInit(num_neurons_per_layer, out_channels)
@@ -77,6 +78,7 @@ class AffineCouplingTransform(transforms.Transform):
     def forward(self, inputs, conds=None, context=None, point=False):
     
         identity_split, transform_split  = thops.split_feature(inputs, "split")
+        conds = conds.flatten(start_dim=1)
         identity_split_cond = torch.cat(
             (identity_split, conds),
             dim=1
